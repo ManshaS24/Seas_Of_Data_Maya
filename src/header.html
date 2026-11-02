@@ -1,0 +1,32 @@
+<header class="app-header">
+  <div class="hdr-top">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5" opacity=".55"/><path d="M12 12l5.5-5.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg>
+      </span>
+      <div class="brand-text">
+        <div class="brand-name">Seas of Data <span class="team-chip">Team Maya</span></div>
+        <div class="brand-sub">Dark-vessel detection &middot; Sentinel-1 SAR &times; AIS &middot; Gulf of Oman / Hormuz</div>
+        <div class="brand-sub brand-team" title="Team Maya members">Team: <b>Mansha Saraswat · Diya Salecha · Daksh Gandhi</b></div>
+      </div>
+    </div>
+    <div class="hdr-right">
+      <span class="demo-chip" title="All bundled vessels, positions and rigs are fictional"><i></i><span id="dataSourceBadgeText">Synthetic demo data — not real incidents</span></span>
+      <label class="hdr-field"><span>SAR pass</span><select id="sceneSelect"></select></label>
+      <button id="btnOpenImporter" class="btn-secondary" title="Load your own SAR detections and AIS CSV files">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 9l5-5 5 5M12 4v12"/></svg>
+        Import data
+      </button>
+    </div>
+  </div>
+  <nav class="navtabs" id="mainNav" aria-label="Sections">
+    <button id="tabBtnMap" class="navtab is-active" data-help="Map, alert feed and thresholds"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M9 20l-6-3V4l6 3 6-3 6 3v13l-6-3zM9 7v13M15 4v13"/></svg>Live Ops</button>
+    <button id="tabBtnIntel" class="navtab" data-help="Assignment, tracks, spoofing, risk"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M7.5 7.5l3.5 9M16.5 7.5L13 16.5M8 6h8"/></svg>Intelligence</button>
+    <button id="tabBtnEnv" class="navtab" data-help="Wind, waves, detectability"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h11a3 3 0 10-3-3M3 12h15a3 3 0 11-3 3M3 16h7"/></svg>Environment</button>
+    <button id="tabBtnSar" class="navtab" data-help="Calibration, speckle filter, CFAR, wakes"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-6 4 12 2-6h6"/></svg>SAR Lab</button>
+    <button id="tabBtnVal" class="navtab" data-help="Confusion matrix and benchmarks"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Validation</button>
+    <button id="tabBtnData" class="navtab" data-help="Provenance and data-quality checks"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>Data</button>
+    <button id="tabBtnReport" class="navtab" data-help="Printable mission report"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9zM14 3v6h6M8 13h8M8 17h5"/></svg>Report</button>
+    <button id="tabBtnMethod" class="navtab" data-help="How every step works, and its limits"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 012-2h13v16H6a2 2 0 00-2 2zM4 19a2 2 0 012-2h13"/></svg>Methods</button>
+  </nav>
+</header>

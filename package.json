@@ -1,0 +1,23 @@
+{
+  "name": "seas-of-data",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "test": "node tests/test_engine.js",
+    "build": "cd tools && npm install --no-audit --no-fund && cd .. && python3 tools/build.py",
+    "serve": "python3 -m http.server 8000 --directory dist"
+  },
+  "author": "Team Maya (Mansha Saraswat, Diya Salecha, Daksh Gandhi)",
+  "contributors": [
+    {
+      "name": "Mansha Saraswat"
+    },
+    {
+      "name": "Diya Salecha"
+    },
+    {
+      "name": "Daksh Gandhi"
+    }
+  ]
+}

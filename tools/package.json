@@ -1,0 +1,1 @@
+{ "name": "seas-of-data-build", "private": true, "dependencies": { "tailwindcss": "^3.4.17" } }

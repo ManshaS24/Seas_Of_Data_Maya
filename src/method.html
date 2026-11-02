@@ -1,0 +1,203 @@
+<section id="viewMethodLimits" class="hidden flex-1 overflow-y-auto px-6 py-8 md:px-10">
+<div class="doc-wrap">
+<nav class="doc-toc" aria-label="Contents">
+  <b>On this page</b>
+  <a href="#m-overview">Overview</a><a href="#m-where">Where each feature lives</a><a href="#m-inputs">Inputs</a><a href="#m-prep">SAR preprocessing</a><a href="#m-cfar">CFAR detection</a><a href="#m-attr">Length &amp; confidence</a><a href="#m-ais">AIS interpolation</a><a href="#m-geom">SAR geometry</a><a href="#m-assign">Hungarian assignment</a><a href="#m-multi">Multi-pass tracks</a><a href="#m-env">Environment model</a><a href="#m-spoof">Spoofing checks</a><a href="#m-density">Traffic density</a><a href="#m-risk">Risk score</a><a href="#m-wake">Wake detection</a><a href="#m-bridge">CFAR → fusion</a><a href="#m-qc">Data checks &amp; provenance</a><a href="#m-explain">Alert explanations</a><a href="#m-scope">Radar scope</a><a href="#m-val">Validation</a><a href="#m-limits">Limitations</a><a href="#m-params">Parameters</a>
+</nav>
+<article class="doc">
+<h1>Methods</h1>
+<p class="lede" style="margin-bottom:4px">Team Maya: Mansha Saraswat, Diya Salecha, Daksh Gandhi.</p>
+<p class="lede">How a Sentinel-1 radar image and a stream of AIS messages become a ranked list of vessels that are visible to radar but not broadcasting. Every algorithm described here is implemented in this file; nothing is mocked.</p>
+
+<h2 id="m-overview" style="border-top:0;padding-top:0">Overview</h2>
+<svg class="flow" viewBox="0 0 860 225" width="100%" role="img" aria-label="Pipeline diagram">
+  <defs><marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="#6b7686"/></marker></defs>
+  <g fill="#171c24" stroke="#323b49">
+    <rect x="10" y="20" width="150" height="54" rx="6"/><rect x="190" y="20" width="150" height="54" rx="6"/><rect x="370" y="20" width="150" height="54" rx="6"/>
+    <rect x="10" y="150" width="150" height="54" rx="6"/><rect x="190" y="150" width="150" height="54" rx="6"/>
+    <rect x="550" y="85" width="140" height="64" rx="6" stroke="#3d7eff"/><rect x="715" y="85" width="135" height="64" rx="6"/>
+  </g>
+  <g fill="#e6e9ee" font-size="12.5" font-weight="600" text-anchor="middle">
+    <text x="85" y="44">Sentinel-1 GRD</text><text x="265" y="44">Preprocess</text><text x="445" y="44">CFAR detection</text>
+    <text x="85" y="174">AIS messages</text><text x="265" y="174">Integrity checks</text>
+    <text x="620" y="113">Hungarian</text><text x="620" y="130">assignment</text><text x="782" y="113">Matched / dark</text><text x="782" y="130">+ risk score</text>
+  </g>
+  <g fill="#8b95a5" font-size="11" text-anchor="middle">
+    <text x="85" y="62">VV, 10 m</text><text x="265" y="62">σ⁰ · speckle filter</text><text x="445" y="62">length · σ⁰ · wake</text>
+    <text x="85" y="192">position · SOG · COG</text><text x="265" y="192">spoof flags · interpolate to t</text>
+    <text x="782" y="144">tracks · explanations</text>
+  </g>
+  <g stroke="#6b7686" stroke-width="1.5" fill="none" marker-end="url(#ar)">
+    <path d="M160 47H188"/><path d="M340 47H368"/><path d="M520 47C545 47 535 105 548 108"/>
+    <path d="M160 177H188"/><path d="M340 177C400 177 480 130 548 125"/><path d="M690 117H713"/>
+  </g>
+</svg>
+<p>Detections need only a CSV of lon, lat, time, σ⁰ and blob area (for example exported from Earth Engine). Two input paths exist. The <b>Live Ops</b> view consumes a detection table (lon, lat, time, VV backscatter, blob area) plus AIS pings. The <b>SAR Lab</b> runs the same detection stages on an actual raster. Everything downstream of detection (interpolation, assignment, tracks, risk) is shared.</p>
+
+<h2 id="m-where">Where each feature lives</h2>
+<table>
+<tr><th>Feature</th><th>Where to use it</th><th>What you see</th></tr>
+<tr><td>Hungarian assignment</td><td>Live Ops → <b>Hungarian matching</b> module; Fusion engine panel</td><td>Matches vs greedy baseline; Intelligence tab lists reassigned pairs</td></tr>
+<tr><td>AIS interpolation quality</td><td><b>AIS uncertainty</b> module; Intelligence tab</td><td>95% ellipses on the map, A–D grade per track</td></tr>
+<tr><td>Multi-pass association</td><td><b>Multi-pass tracks</b> module</td><td>Red dashed tracks for persistent dark hulls</td></tr>
+<tr><td>Explainable risk</td><td><b>Risk scoring</b> module; alert cards; inspector</td><td>Risk chip on each alert, factor bars in the inspector</td></tr>
+<tr><td>Spoofing checks</td><td><b>Spoofing checks</b> module; Intelligence tab</td><td>Flagged MMSIs with the reason</td></tr>
+<tr><td>Traffic density</td><td><b>Traffic density</b> module</td><td>Density heat layer; “outside lanes” risk factor</td></tr>
+<tr><td>Environmental context</td><td>Environment tab; <b>Sea state</b> module</td><td>Inputs, derived clutter, detectability curve, wind sweep</td></tr>
+<tr><td>Preprocessing, CFAR, wakes</td><td>SAR Lab tab</td><td>Raw / filtered / detected rasters, truth table, filter comparison</td></tr>
+<tr><td>Validation</td><td>Validation tab; <b>Validation</b> module</td><td>Confusion matrices, precision, recall, F1, MCC, buffer sweep; multi-seed intervals, paired comparison, ablation, stress tests, PR curve, 18 self-tests</td></tr>
+<tr><td>CFAR → AIS fusion</td><td>SAR Lab → <b>Fuse with AIS on the radar</b></td><td>The detections from the raster are matched against AIS on the Live Ops scope</td></tr>
+<tr><td>Data checks &amp; provenance</td><td>Data tab; <b>Data checks</b> module</td><td>Pass / warn / fail list, SHA-256 of both files, scene geometry, source note</td></tr>
+<tr><td>Alert explanations</td><td>Inspector → <b>Why this alert</b></td><td>Evidence, innocent explanations, what would settle it, what-if</td></tr>
+<tr><td>Mission report</td><td>Report tab; <b>Mission report</b> module</td><td>One page: map, alerts with reasons, method, provenance, validation, limits. Download or print</td></tr>
+<tr><td>Radar scope</td><td>Live Ops centre</td><td>PPI display with range rings, bearing ring, sweep, cursor and EBL/VRM readouts</td></tr>
+</table>
+
+<h2 id="m-inputs">Inputs</h2>
+<p>SAR detections: <code>det_id (optional), lon, lat, time_utc, vv_db, area_m2</code>. AIS: <code>mmsi, time_utc, lon, lat, sog, cog, name, ship_type</code>. Optional SAR columns: <code>length_m, pass_direction, heading_deg, incidence_deg, relative_orbit, platform, instrument_mode, polarisation, acq_time_utc</code>. Use <b>Import data</b> to load your own files. Each distinct <code>time_utc</code> in the SAR file is treated as one scene (satellite pass). AIS pings within ±6 h of a scene are considered.</p>
+<p>Bundled data is synthetic. A handful of showcase rows were added on purpose to exercise specific logic: two transponders and two hulls arranged so greedy matching fails, a stationary dark hull repeated on three passes, a spoofed identity with a real hull nearby, and a vessel with a long AIS gap.</p>
+
+<h2 id="m-prep">SAR preprocessing</h2>
+<p>Implemented in the SAR Lab and available for any raster. Order matters:</p>
+<ol style="margin-left:18px;list-style:decimal"><li><b>Calibration</b> to σ⁰: DN → σ⁰ = DN² / A². Real products supply A as a per-pixel lookup table in the annotation XML; the simulator uses a constant.</li><li><b>Thermal-noise subtraction</b>: σ⁰ − N, floored at 10⁻⁶.</li><li><b>Incidence-angle normalisation</b> (optional): σ⁰ · cos θ<sub>ref</sub> / cos θ<sub>i</sub>, θ<sub>ref</sub> = 39°.</li><li><b>Speckle filtering</b>: boxcar, median or <b>Lee</b>. Lee computes x̂ = x̄ + k(x − x̄), k = 1 − C<sub>u</sub>² / C<sub>i</sub>² (0 when C<sub>i</sub>² ≤ C<sub>u</sub>²), C<sub>u</sub>² = 1/ENL, ENL = 4.4, window 5×5 by default. It smooths open sea but leaves bright point targets close to untouched.</li></ol>
+
+<h2 id="m-cfar">CFAR detection</h2>
+<p>A constant-false-alarm-rate detector adapts its threshold to the local sea clutter so the expected false-alarm rate stays fixed.</p>
+<div class="eq">T(x,y) = μ_bg + k · σ_bg        (dB domain, ring around the pixel)
+k = Φ⁻¹(1 − P_fa)                 →  4.75 for P_fa = 10⁻⁶
+ring: guard 6 px, background 16 px; ≥ 30 valid pixels; σ_bg floored at 0.25 dB</div>
+<p>Means and variances come from summed-area tables, so cost is O(pixels) regardless of ring size. Land pixels (from the coastline polygons) are excluded from the statistics and from detection. The optional robust mode re-tests each candidate against the ring median plus 0.9·k·1.4826·MAD, which cut false alarms roughly in half on the simulated scenes. Surviving pixels are merged (2 px dilation), labelled with 8-connectivity, and measured: centroid weighted by σ⁰, length and width from second moments (L = √(12 λ₁) × pixel size), mean and peak dB.</p>
+
+<h2 id="m-attr">Length and confidence</h2>
+<div class="eq">L_est = clamp( √(4.2 · area_m²), 14, 400 ) m
+conf  = 0.65 · norm(vv_db; −12…6) + 0.35 · norm(log₁₀ area; 2.4…4.4)      clamp 0.12–0.99
+conf' = conf · ( 0.5 + 0.5 · σ((SCR − 4)/2.5) )          SCR = vv_db − σ⁰_clutter(environment)</div>
+<p>The second line is the environment-aware scaling, switchable in the Fusion engine panel. It only matters when contrast over the sea is marginal.</p>
+
+<h2 id="m-ais">AIS interpolation and uncertainty</h2>
+<p>AIS reports arrive every few seconds to many minutes. Each track is brought to the SAR acquisition time <i>t</i>:</p>
+<ul><li><b>Bracketing pings</b>: linear interpolation, or cubic Hermite using SOG/COG as end tangents.</li><li><b>One side only</b>: dead-reckoning from the nearest ping along COG at SOG, refused beyond 45 min.</li></ul>
+<p>Position error is modelled, not guessed:</p>
+<div class="eq">base noise s₀ = 10 m;   diffusion q = (2 + 0.3·v)²  m²/s   (v = SOG in m/s)
+bracketed:      Var = q · Δt₁Δt₂ / (Δt₁ + Δt₂)      (Brownian bridge) → along 1.3×, cross 0.7×
+dead-reckoned:  along = q·Δt + (0.26·Δt)²,   cross = 0.5·q·Δt + (0.052·v·Δt)²
+σ = √((σ_along² + σ_cross²) / 2);   quality = exp(−σ / 250)</div>
+<p>Grades: <b>A</b> σ ≲ 55 m, <b>B</b> ≲ 130 m, <b>C</b> ≲ 230 m, <b>D</b> beyond. Long reporting gaps are the main reason a ship ends up D, and also the main cause of false “dark” alerts.</p>
+
+<h2 id="m-geom">SAR geometry: azimuth shift</h2>
+<p>A ship moving towards or away from the radar is displaced along the flight direction because its Doppler history is shifted:</p>
+<div class="eq">Δx = (R / V) · v_r        R = slant range (693 km altitude, incidence θ),  V = 7.1 km/s
+v_r = horizontal speed component towards the sensor × sin θ</div>
+<p>A 10-knot ship typically shifts a few hundred metres. The pass direction is taken from the UTC hour (≈02 h descending, heading 191°; ≈14 h ascending, heading 349°) or set by hand. <b>Compensation is off by default</b> because the bundled synthetic detections contain no such displacement; turn it on for real data.</p>
+
+<h2 id="m-assign">Hungarian assignment</h2>
+<p>Matching each detection to its nearest transponder (greedy) lets one ship take a transponder that fits its neighbour better, which produces a false dark vessel and a wrong identity at the same time. Instead the whole scene is solved at once.</p>
+<div class="eq">residual r = detection − predicted AIS position (predicted position includes the azimuth shift if enabled)
+S = Σ_AIS(σ_along, σ_cross rotated to COG)  +  Σ_azimuth(150 m along flight, 60 m if compensated)  +  Σ_SAR(20 m)
+cost = d² = rᵀ S⁻¹ r  +  10⁻³ · dist / buffer          pairs farther than the buffer are not allowed (cost 10⁹)</div>
+<p>The rectangular assignment problem is solved by the Kuhn–Munkres algorithm with potentials (shortest augmenting paths, O(n²m)). It was checked against brute-force enumeration on 600 random matrices, including tall and wide shapes. Unassigned detections become dark-vessel candidates. d² is chi-square distributed with 2 degrees of freedom for a correct match: 95 % gate 5.99, 99 % gate 9.21. Both greedy and Hungarian results are always computed so the difference can be shown.</p>
+
+<h3>Orbit metadata and per-detection timing</h3>
+<p>Azimuth displacement depends on the satellite heading and the look direction. When the SAR file has <code>pass_direction</code> / <code>heading_deg</code> they are used; otherwise the pass is guessed from the UTC hour (before 12:00 descending, heading 191°; afterwards ascending, 349°) and the Data tab says so. <code>incidence_deg</code> overrides the modelled incidence angle. Real products are acquired over ~10–25 s, so a detection can be later than the scene reference time. If <code>acq_time_utc</code> is given, the AIS prediction is advanced along its COG by that offset (v·Δt) before matching. Per-detection timestamps within 2 minutes are merged into one scene on import, and the original time is kept as <code>acq_time_utc</code>.</p>
+<h3>Size-aware cost</h3>
+<p>If the detection has a length (<code>length_m</code>, or the estimate) and the AIS record has a ship type, a penalty 0.6 × mismatch (0, 0.5 or 1, from a table of plausible lengths per type) is added to the Mahalanobis cost. It breaks ties between two nearby transponders in favour of the one whose declared type fits the hull; it cannot create a match outside the gate. It can be switched off, and the ablation table shows what it is worth.</p>
+
+<h2 id="m-multi">Multi-pass association</h2>
+<ul><li><b>AIS identities</b> are tracks of the same MMSI across passes.</li><li><b>Dark hulls</b> are linked scene-to-scene with a second Hungarian solve. Cost = 0.5·D/gate + 0.3·ΔL/(0.35·L) + 0.2·|Δσ⁰|/6 dB. Gate = max(2.5 km, 18 kn × Δt) when passes are within 6 h, otherwise 2.5 km; length may differ by at most 35 %; links with cost above 0.8 are refused; up to two passes may be skipped.</li></ul>
+<p>Persistence across passes is a strong signal for a stationary vessel loitering, and is weak evidence for anything that moves: a ship that sails between passes six days apart will rarely be linked.</p>
+
+<h2 id="m-env">Environment model</h2>
+<p>Inputs: wind speed U (m/s), wind direction, significant wave height H<sub>s</sub>, sea state (auto from H<sub>s</sub> via the Douglas scale or manual), incidence angle θ. Open-Meteo can fill them in for a scene time.</p>
+<div class="eq">σ⁰_clutter(dB) = −20 + 9.5·log₁₀(U/5) − 0.28·(θ − 35) + cos(2φ) + 0.8·log₁₀(H_s/0.8)      φ = wind − look direction
+RCS(dBsm) = 19·log₁₀ L − 8                  noise floor NESZ = −23 dB
+P_detect = σ( (peak − σ⁰_clutter − (8 + 0.8·H_s)) / 1.5 ),   peak = 10·log₁₀(0.2·RCS / A_pixel)
+false-alarm index = 0.5·σ((U−9)/3) + 0.3·σ((H_s−2)/0.8) + 0.2·σ((θ−42)/4)</div>
+<p>It feeds detection confidence, the dark-vessel risk score (rough seas make a lone bright blob less trustworthy), the minimum detectable ship length, the simulated sea in the SAR Lab, and the wind sweep. <b>This is a simplified empirical model, not CMOD5 or a calibrated geophysical model function</b>; use it for relative guidance.</p>
+
+<h2 id="m-spoof">AIS integrity checks</h2>
+<table><tr><th>Check</th><th>Triggers when</th><th>Severity</th></tr>
+<tr><td>Teleport</td><td>implied speed &gt; 45 kn over &gt; 2 km</td><td>1.0</td></tr>
+<tr><td>Duplicate time</td><td>two positions &gt; 100 m apart at the same timestamp</td><td>0.8</td></tr>
+<tr><td>Frozen position</td><td>reports &gt; 3 kn but moves &lt; 30 m in &gt; 10 min</td><td>0.5</td></tr>
+<tr><td>Speed mismatch</td><td>|implied − reported SOG| &gt; max(10 kn, SOG) within 2 h</td><td>0.4</td></tr>
+<tr><td>Course mismatch</td><td>track bearing differs from COG by &gt; 70° (moving &gt; 4 kn)</td><td>0.3</td></tr></table>
+<p>Score = 1 − exp(−1.2 · Σ severity). A dark hull lying within 3 km of any reported position of a spoofed identity is flagged as a possible real hull behind a fake track.</p>
+
+<h2 id="m-density">Traffic-density anomaly</h2>
+<p>All AIS pings, plus a weak prior along the shipping lanes, are binned on a 0.02° grid and smoothed twice with a 5-tap binomial kernel. The anomaly of a location is 1 − its percentile in the cell-density distribution, so a hull far from any established route scores near 1. Display it with the <b>Traffic density</b> layer.</p>
+
+<h2 id="m-risk">Risk score</h2>
+<p>An additive log-odds model, <code>score = 100 · σ(b₀ + Σ wᵢ·xᵢ)</code>, with every term shown in the inspector. <b>The weights are hand-set priors, not fitted to labelled data</b>, so the score ranks alerts for human review; it is not a probability of wrongdoing.</p>
+<table><tr><th colspan="3">Dark vessel (baseline −3.0)</th></tr>
+<tr><td>No AIS correlate</td><td>+1.5</td><td>log₁₀(nearest AIS distance / buffer), 0–1</td></tr>
+<tr><td>AIS dropout plausible</td><td>−1.3</td><td>nearest AIS within 15 km with a gap &gt; 45 min</td></tr>
+<tr><td>Large hull</td><td>+0.9</td><td>(L − 40) / 200</td></tr>
+<tr><td>SAR confidence</td><td>+1.0</td><td>environment-adjusted confidence</td></tr>
+<tr><td>Sea-clutter false-alarm risk</td><td>−1.0</td><td>false-alarm index</td></tr>
+<tr><td>Persists across passes</td><td>+1.4</td><td>(passes − 1) / 2</td></tr>
+<tr><td>Loitering 1–4 km from a rig</td><td>+0.9</td><td>Gaussian around 2 km, σ 1.5 km</td></tr>
+<tr><td>Outside traffic lanes</td><td>+0.8</td><td>density anomaly</td></tr>
+<tr><td>Nearby spoofed identity</td><td>+1.2</td><td>spoof score</td></tr>
+<tr><td>Beside an already-assigned transponder</td><td>+1.0</td><td>possible ship-to-ship transfer pattern</td></tr></table>
+<table><tr><th colspan="3">AIS-matched vessel (baseline −3.5)</th></tr>
+<tr><td>Spoofing indicators</td><td>+3.0</td><td>spoof score</td></tr>
+<tr><td>Match inconsistency</td><td>+1.2</td><td>(d² − 2) / (9.21 − 2)</td></tr>
+<tr><td>Type vs size mismatch</td><td>+1.4</td><td>declared type against SAR length range</td></tr>
+<tr><td>Poor AIS quality</td><td>+0.8</td><td>1 − quality</td></tr>
+<tr><td>Wake heading vs COG</td><td>+1.0</td><td>when a wake was measured</td></tr>
+<tr><td>Outside traffic lanes</td><td>+0.4</td><td>density anomaly</td></tr></table>
+
+<h2 id="m-wake">Wake detection</h2>
+<p>For a hull longer than 40 m the filtered image is sampled along 72 rays from 0.75·L + 3 px out to 60 px. Each ray gets a mean z-score against the local robust background. A wake is one-sided, whereas a hull’s own bright skirt is symmetric, so each ray’s score has the opposite ray subtracted. The best ray is declared a wake if it stands at least 5 standard deviations above the other rays. The ship’s heading is the wake direction plus 180°, which removes the 180° heading ambiguity of the hull shape. Small CFAR hits lying along a confirmed wake are merged into their ship.</p>
+
+<h2 id="m-bridge">CFAR to AIS fusion</h2>
+<p>The SAR Lab and the fusion engine used to be separate. The bridge connects them: every CFAR component (not only ships: the simulated rig too) becomes a detection row with its centroid, <code>area_m2</code>, <code>length_m</code> (only when no wake is attached, because a wake inflates the second-moment length) and <code>vv_db</code>, here the blob's peak level above the median sea level in dB, which is the contrast the confidence heuristic expects. AIS is generated for the simulated ships with 12 m noise and 20-minute spacing, plus one unrelated courier. The data are loaded as an ordinary scene, so matching, rig masking, risk and explanations are the same code as for CSV input. The raster remains simulated, so this shows that the pipeline is connected end to end, not that it is accurate on real imagery. With a real GeoTIFF the CFAR rows are produced the same way.</p>
+
+<h2 id="m-qc">Data checks and provenance</h2>
+<p>Before trusting a file the Data tab runs: required columns; every number and timestamp parses; latitude/longitude not swapped or outside range; share of detections inside the AOI; <code>vv_db</code> looks like dB (not linear σ⁰ or raw digital numbers); blob areas positive and plausible; duplicate IDs; scene count and orbit metadata present; AIS sentinel values (lat 91, lon 181, SOG 102.3); 9-digit MMSI; duplicate (MMSI, time); time overlap with the SAR scenes; AIS within ±1 h of every scene; median AIS reporting interval. Failures mean the output would be misleading (for instance, no AIS in a scene makes every detection dark). Provenance records row counts, SHA-256 hashes of both files, load time and a free-text source note, all copied into the mission report. The hashes identify the files; they do not prove where the files came from.</p>
+
+<h2 id="m-explain">Alert explanations</h2>
+<p>Each alert lists its evidence (nearest AIS and distance, confidence, persistence, rig distance, traffic anomaly, nearby spoofing, shadowing a transmitting ship), the innocent explanations the data allow (AIS dropout with its 95% radius, rough sea, small target, low contrast), what would settle it (next pass, second AIS source, higher-resolution sensor) and a what-if (the buffer that would have turned it into a match). These are generated from the same inputs as the risk score, so they cannot disagree with it. They are templates over the evidence, not a model's opinion.</p>
+
+<h2 id="m-scope">Radar scope</h2>
+<p>The Live Ops display is a plan-position indicator: north up, reference point at the centre, a circular window with a 360° bearing ring (1° ticks), range rings at a round step chosen so that up to six rings are visible, and a rotating sweep. Range is set with the buttons (3–120 NM radius) and is computed from the Web-Mercator scale at the centre, so rings are true distances for the chosen latitude. The reference point is re-centred on the loaded detections and AIS. Echoes brighten when the sweep passes and fade afterwards (persistence); dark-vessel markers do not fade. Click the scope to place an EBL/VRM (bearing line and range ring) and read range and bearing from the reference point; cursor range and bearing use great-circle distance and initial bearing. The sweep and persistence are display effects only; the SAR scene is a single snapshot, not a rotating measurement. The yellow land fill is a stylised coast in the Radar chart mode; the Dark chart and Satellite modes use real tiles.</p>
+
+<h2 id="m-val">Validation and benchmarking</h2>
+<p>The generator creates scenes with known truth: AIS-on ships, dark ships, ships whose AIS position is displaced by 4–24 km (spoofed), AIS-only boats below the detectability floor, and clutter blobs whose number rises with the sea-state false-alarm index. Ships get azimuth displacement like real SAR targets and AIS pings have gaps. The <b>same</b> matching function used in Live Ops processes each scene under four configurations: greedy; Hungarian; Hungarian + azimuth compensation; plus environment-aware confidence.</p>
+<div class="eq">precision = TP/(TP+FP)   recall = TP/(TP+FN)   F1 = 2PR/(P+R)
+MCC = (TP·TN − FP·FN) / √((TP+FP)(TP+FN)(TN+FP)(TN+FN))      positive = dark ship</div>
+<p>Also reported: 3-class confusion (AIS-on, dark, clutter vs matched, flagged, filtered, undetected), wrong-transponder count, buffer sweep, and wind sweep. Upload a <code>det_id,label</code> file to score real detections.</p>
+<h3>Statistical validation suite</h3>
+<ul><li><b>Multi-seed intervals.</b> The benchmark is repeated over N independent random worlds; results are mean ± 95% Student-t interval.</li><li><b>Paired comparison.</b> Each variant is compared with greedy matching on the same world, so scene difficulty cancels; the table reports the mean gain, its interval and wins/ties/losses. A gain whose interval includes zero is not claimed.</li><li><b>Ablation.</b> The full pipeline with one component removed at a time (Hungarian, azimuth compensation, environment-aware confidence, size-aware cost). A component that changes nothing is not exercised by the benchmark.</li><li><b>Stress tests.</b> F1 with its band as cluster density, AIS dropout probability and SAR position noise rise.</li><li><b>Precision–recall</b> as the confidence cut-off moves, with average precision (area under the precision envelope).</li><li><b>Self-tests</b> (18, run in the browser): Hungarian optimal against brute force; interpolation; AIS error profile; azimuth shift linearity and sign; ellipse covers ≈95% of Gaussian samples; ellipse geometry; land mask; CFAR false-alarm rate on pure clutter; CFAR finds a ship; wake present on a moving ship and absent on an anchored one; spoof detector; multi-pass linking; risk monotonicity; time-offset matching; data checks; scene clustering; generator determinism.</li></ul>
+<p>All of it uses synthetic ground truth generated under the same assumptions as the method, so it can detect bugs and show sensitivity to difficulty; it cannot measure performance on real shipping.</p>
+
+<h2 id="m-limits">Limitations</h2>
+<div class="note"><b>Read before presenting.</b> The raster and the benchmark are synthetic. They demonstrate that the algorithms are implemented correctly and how they behave, not how accurate they are on real imagery.</div>
+<ul>
+<li><b>Resolution floor.</b> Sentinel-1 IW has ~20×22 m resolution (10 m pixels). Boats under roughly 15–20 m are indistinguishable from sea clutter, so a quiet transponder on a small boat is invisible here.</li>
+<li><b>Wind and wave clutter.</b> Above ~10 m/s whitecaps and wave patterns raise false alarms and hide small ships. The sweep in the Environment tab quantifies this on synthetic scenes. Strong coastal structures can also create ambiguity ghosts offshore.</li>
+<li><b>AIS is imperfect.</b> Satellite AIS drops messages in dense areas, so a gap is not intent. The risk score deliberately reduces the dark score when the nearest transponder has a gap.</li>
+<li><b>Revisit interval.</b> Each location is seen every few days at best. Multi-pass linking only works for slow or stationary vessels.</li>
+<li><b>Model simplifications.</b> Environment model is empirical, not CMOD5. Wake detector and CFAR are tuned on simulation. Risk weights are priors.</li>
+<li><b>CFAR → fusion on real imagery is untested.</b> The bridge is exercised with a simulated raster. Real Sentinel-1 scenes bring land clutter, ambiguities, ice and radio-frequency interference that the simulator does not model.</li>
+<li><b>Provenance is self-declared.</b> Hashes show which bytes were used, not who produced them.</li>
+<li><b>Untested network features.</b> Map tiles, Open-Meteo and GeoTIFF loading need internet and were not exercised against live services during development.</li>
+<li><b>Not evidence.</b> An alert means “radar sees a vessel with no matching AIS under these thresholds”. It needs human review and, ideally, a second sensor.</li>
+</ul>
+
+<h2 id="m-params">Parameter reference</h2>
+<table><tr><th>Parameter</th><th>Default</th><th>Where</th></tr>
+<tr><td>Match buffer</td><td>500 m (100–2000)</td><td>Live Ops sliders</td></tr>
+<tr><td>Minimum confidence</td><td>55 %</td><td>Live Ops sliders</td></tr>
+<tr><td>Platform mask radius</td><td>1000 m</td><td>Live Ops sliders</td></tr>
+<tr><td>Assignment / interpolation</td><td>Hungarian / linear</td><td>Fusion engine panel</td></tr>
+<tr><td>Azimuth compensation</td><td>off</td><td>Fusion engine panel</td></tr>
+<tr><td>Environment</td><td>6 m/s, 315°, H<sub>s</sub> 0.8 m, θ 39°</td><td>Environment tab</td></tr>
+<tr><td>CFAR P<sub>fa</sub> / guard / background</td><td>10⁻⁶ / 6 / 16 px</td><td>SAR Lab</td></tr>
+<tr><td>Speckle filter</td><td>Lee 5×5, ENL 4.4</td><td>SAR Lab</td></tr>
+<tr><td>SAR geolocation σ</td><td>20 m</td><td>fixed</td></tr>
+<tr><td>Dead-reckoning limit</td><td>45 min</td><td>fixed</td></tr>
+<tr><td>Risk levels</td><td>&lt;30 low, &lt;55 medium, &lt;75 high, else critical</td><td>fixed</td></tr></table>
+</article>
+</div>
+</section>

@@ -1,0 +1,2369 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TEAM MAYA // SAR-AIS Dark Vessel Surveillance — Seas of Data</title>
+  
+  <!-- Tailwind CSS for responsive layout & utility classes -->
+  <!-- Tailwind utilities pre-compiled and inlined: no CDN dependency, works offline -->
+<!--TW_INLINE-->
+  
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  
+  <!-- Leaflet 1.9.4 Pinned from cdnjs -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+  <style>
+    :root {
+      --bg-navy: #0a0d1a;
+      --bg-purple: #15122b;
+      --panel-bg: rgba(14, 18, 38, 0.90);
+      --border-color: rgba(79, 140, 255, 0.30);
+      --accent-pink: #4f8cff;
+      --accent-cyan: #00f2fe;
+      --accent-amber: #ffb800;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: linear-gradient(135deg, var(--bg-navy) 0%, var(--bg-purple) 100%);
+      color: var(--text-main);
+      overflow-x: hidden;
+    }
+
+    .font-mono-tech {
+      font-family: 'JetBrains Mono', 'Courier New', monospace;
+      letter-spacing: 0.05em;
+    }
+
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0a0d1a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #332457;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #4f8cff;
+    }
+
+    /* Map Container & Offline Ocean Canvas Fallback */
+    #map {
+      background: radial-gradient(circle at 50% 50%, #0d1836 0%, #060916 100%);
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    /* Keyless Dark Nautical Filter applied ONLY to OSM Tile Pane (No API key needed!) */
+    #map.osm-dark-filter .leaflet-tile-pane {
+      filter: none; /* CARTO dark_all is already dark */
+    }
+
+    /* Subtle radar toning for Esri Satellite imagery */
+    #map.esri-sat-filter .leaflet-tile-pane {
+      filter: brightness(82%) contrast(112%) saturate(90%);
+    }
+
+    /* Pulsing Dark Vessel Marker CSS */
+    @keyframes pulse-pink {
+      0% {
+        transform: scale(0.85);
+        box-shadow: 0 0 0 0 rgba(255, 77, 79, 0.85);
+      }
+      70% {
+        transform: scale(1.12);
+        box-shadow: 0 0 0 14px rgba(255, 77, 79, 0);
+      }
+      100% {
+        transform: scale(0.85);
+        box-shadow: 0 0 0 0 rgba(255, 77, 79, 0);
+      }
+    }
+
+    .dark-vessel-pulse {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #ff4d4f;
+      border: 2px solid #ffffff;
+      animation: pulse-pink 1.8s infinite;
+      cursor: pointer;
+    }
+
+    .matched-vessel-icon {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #00f2fe;
+      border: 2px solid #061826;
+      box-shadow: 0 0 8px #00f2fe;
+    }
+
+    .platform-marker-icon {
+      width: 14px;
+      height: 14px;
+      background: #ffb800;
+      border: 2px solid #15122b;
+      transform: rotate(45deg);
+      box-shadow: 0 0 8px rgba(255, 184, 0, 0.85);
+    }
+
+    /* Range Slider Styling */
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 6px;
+      background: #1e293b;
+      border-radius: 4px;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #4f8cff;
+      border: 2px solid #fff;
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(79, 140, 255, 0.85);
+    }
+
+    /* Leaflet Tooltip Override */
+    .leaflet-tooltip.maya-tooltip {
+      background: rgba(10, 13, 26, 0.95);
+      border: 1px solid rgba(79, 140, 255, 0.55);
+      color: #f8fafc;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.65);
+    }
+    .leaflet-tooltip-top:before,
+    .leaflet-tooltip-bottom:before,
+    .leaflet-tooltip-left:before,
+    .leaflet-tooltip-right:before {
+      display: none;
+    }
+
+    /* Glowing Synthetic Demo Badge */
+    .demo-badge-glow {
+      box-shadow: 0 0 15px rgba(255, 184, 0, 0.45), inset 0 0 8px rgba(255, 184, 0, 0.25);
+    }
+  </style>
+</head>
+<body class="h-screen flex flex-col select-none overflow-hidden">
+
+  <!-- ==================== TOP NAVIGATION & DEMO BANNER ==================== -->
+  <header class="w-full bg-[#0a0d1a]/95 border-b border-blue-500/30 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 z-30">
+    <!-- Left: Brand & Team Maya -->
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-[#4f8cff] to-[#6d4aff] flex items-center justify-center shadow-lg shadow-blue-500/20 border border-white/20">
+        <!-- Radar SVG Icon -->
+        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" stroke-opacity="0.4"/>
+          <path d="M12 12L18.36 5.64" stroke-linecap="round"/>
+          <circle cx="12" cy="12" r="2" fill="currentColor"/>
+          <path d="M12 3a9 9 0 0 1 9 9" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="font-extrabold tracking-tight text-base md:text-lg text-white">SEAS OF DATA</span>
+          <span class="text-[11px] font-mono-tech uppercase px-2 py-0.5 rounded bg-purple-950/90 text-sky-400 border border-blue-500/50 font-bold">TEAM MAYA</span>
+        </div>
+        <p class="text-[11px] font-mono-tech text-slate-400 uppercase tracking-wider">
+          CHALLENGE 01 // SENTINEL-1 SAR &times; AIS DARK-VESSEL FUSION PIPELINE
+        </p>
+      </div>
+    </div>
+
+    <!-- Center: Prominent Synthetic Data Disclaimer Badge -->
+    <div class="demo-badge-glow bg-[#2a1f05] border border-[#ffb800] px-3.5 py-1.5 rounded-full flex items-center gap-2">
+      <span class="w-2.5 h-2.5 rounded-full bg-[#ffb800] animate-ping"></span>
+      <span id="dataSourceBadgeText" class="font-mono-tech text-[11px] md:text-xs font-bold tracking-wider text-amber-200 uppercase">
+        SYNTHETIC DEMO DATA — NOT REAL INCIDENTS
+      </span>
+    </div>
+
+    <!-- Right: Scene Selector, CSV Importers & View Switcher -->
+    <div class="flex items-center flex-wrap gap-2">
+      <!-- Scene Pass Selector -->
+      <div class="flex items-center bg-[#121730] border border-slate-700/80 rounded-lg px-2.5 py-1">
+        <span class="font-mono-tech text-[10px] text-slate-400 uppercase mr-2">S1 IW VV PASS:</span>
+        <select id="sceneSelect" class="bg-transparent font-mono-tech text-xs font-bold text-cyan-300 focus:outline-none cursor-pointer">
+          <!-- Populated dynamically from dataset (includes ALL SCENES + 3 dates) -->
+        </select>
+      </div>
+
+      <!-- Custom CSV Upload Trigger -->
+      <button id="btnOpenImporter" class="px-2.5 py-1.5 rounded-lg bg-[#161d3a] hover:bg-[#222c54] border border-cyan-500/40 text-cyan-300 font-mono-tech text-xs transition flex items-center gap-1.5" title="Load real Google Earth Engine SAR CSV or AIS CSV">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5m0 0l5 5m-5-5v12" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>SWAP CSV</span>
+      </button>
+
+      <!-- Tab Switcher -->
+      <div class="flex bg-[#11152c] p-0.5 rounded-lg border border-slate-700">
+        <button id="tabBtnMap" class="px-3 py-1 rounded-md text-xs font-bold font-mono-tech uppercase bg-[#4f8cff] text-white transition">
+          Live Ops Dashboard
+        </button>
+        <button id="tabBtnMethod" class="px-3 py-1 rounded-md text-xs font-bold font-mono-tech uppercase text-slate-300 hover:text-white transition">
+          Method &amp; Limits
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==================== KPI TELEMETRY STRIP ==================== -->
+  <section class="w-full bg-[#0d1229]/90 border-b border-slate-800/90 px-4 py-2 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 z-20">
+    <div class="bg-[#131936]/90 border border-slate-700/70 rounded-lg px-3 py-1.5 flex items-center justify-between">
+      <div>
+        <div class="font-mono-tech text-[10px] uppercase text-slate-400">AOI Sector</div>
+        <div class="text-xs font-bold text-slate-200 truncate">Jebel Ali &rarr; Hormuz</div>
+      </div>
+      <span class="font-mono-tech text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-sky-300">TEAM MAYA</span>
+    </div>
+
+    <div class="bg-[#131936]/90 border border-slate-700/70 rounded-lg px-3 py-1.5 flex items-center justify-between">
+      <div>
+        <div class="font-mono-tech text-[10px] uppercase text-slate-400">Total SAR Detections</div>
+        <div id="kpiTotalSar" class="text-lg font-extrabold text-white font-mono-tech">0</div>
+      </div>
+      <span id="kpiLowConfFiltered" class="font-mono-tech text-[10px] text-slate-400">0 filtered</span>
+    </div>
+
+    <div class="bg-[#131936]/90 border border-amber-500/30 rounded-lg px-3 py-1.5 flex items-center justify-between">
+      <div>
+        <div class="font-mono-tech text-[10px] uppercase text-amber-300/90">Platform Masked</div>
+        <div id="kpiPlatformCount" class="text-lg font-extrabold text-amber-400 font-mono-tech">0</div>
+      </div>
+      <span class="font-mono-tech text-[10px] text-amber-300/70">Static Rigs</span>
+    </div>
+
+    <div class="bg-[#131936]/90 border border-cyan-500/30 rounded-lg px-3 py-1.5 flex items-center justify-between">
+      <div>
+        <div class="font-mono-tech text-[10px] uppercase text-cyan-300/90">AIS Matched</div>
+        <div id="kpiMatchedCount" class="text-lg font-extrabold text-cyan-400 font-mono-tech">0</div>
+      </div>
+      <span class="font-mono-tech text-[10px] text-cyan-300/70">1-to-1 Haversine</span>
+    </div>
+
+    <div class="bg-[#2a1012]/90 border border-red-500/60 rounded-lg px-3 py-1.5 flex items-center justify-between">
+      <div>
+        <div class="font-mono-tech text-[10px] uppercase text-red-300">Dark Vessels</div>
+        <div id="kpiDarkCount" class="text-lg font-extrabold text-[#ff4d4f] font-mono-tech">0</div>
+      </div>
+      <span class="w-2 h-2 rounded-full bg-[#ff4d4f] animate-ping"></span>
+    </div>
+
+    <div class="bg-[#131936]/90 border border-blue-500/30 rounded-lg px-3 py-1.5 flex items-center justify-between">
+      <div>
+        <div class="font-mono-tech text-[10px] uppercase text-slate-400">% Dark Rate</div>
+        <div id="kpiDarkPercent" class="text-lg font-extrabold text-red-400 font-mono-tech">0.0%</div>
+      </div>
+      <span class="font-mono-tech text-[10px] text-slate-400">Excl. Rigs</span>
+    </div>
+  </section>
+
+  <!-- ==================== MAIN WORKSPACE: TAB 1 (LIVE OPS DASHBOARD) ==================== -->
+  <main id="viewOpsMap" class="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
+    
+    <!-- LEFT SIDEBAR: REAL-TIME PIPELINE PARAMETERS & LAYER TOGGLES -->
+    <aside class="w-full lg:w-80 bg-[#0c1024]/95 border-b lg:border-b-0 lg:border-r border-slate-800 p-3.5 flex flex-col gap-3.5 overflow-y-auto z-20 shrink-0">
+      
+      <!-- Scene Timeline Bar -->
+      <div class="bg-[#131936] border border-slate-700/80 rounded-xl p-3">
+        <div class="flex items-center justify-between mb-2">
+          <span class="font-mono-tech text-[11px] uppercase font-bold text-slate-300">Scene Acquisition Pass</span>
+          <span id="sceneIndexBadge" class="font-mono-tech text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-sky-300 border border-blue-500/30">Pass 1 / 4</span>
+        </div>
+        <input id="sceneSlider" type="range" min="0" max="3" step="1" value="0" class="mb-2" />
+        <div class="flex justify-between font-mono-tech text-[9px] text-slate-400">
+          <span>18 OCT</span>
+          <span>24 OCT</span>
+          <span>30 OCT</span>
+          <span>ALL PASSES</span>
+        </div>
+      </div>
+
+      <!-- Real-Time Fusion Sliders -->
+      <div class="bg-[#131936] border border-slate-700/80 rounded-xl p-3 space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-1.5">
+          <span class="font-mono-tech text-[11px] uppercase font-bold text-sky-400">Live Fusion Thresholds</span>
+          <button id="btnResetSliders" class="font-mono-tech text-[10px] text-slate-400 hover:text-white underline">Reset</button>
+        </div>
+
+        <!-- Slider 1: Matching Buffer (100m - 2000m) -->
+        <div>
+          <div class="flex justify-between text-xs mb-1">
+            <span class="text-slate-300 font-medium">AIS Match Buffer</span>
+            <span id="valMatchBuffer" class="font-mono-tech font-bold text-cyan-300">500 m</span>
+          </div>
+          <input id="sliderMatchBuffer" type="range" min="100" max="2000" step="50" value="500" />
+          <div class="flex justify-between font-mono-tech text-[9px] text-slate-500 mt-0.5">
+            <span>100 m (Strict)</span>
+            <span>2000 m (Loose)</span>
+          </div>
+        </div>
+
+        <!-- Slider 2: Minimum SAR Confidence -->
+        <div>
+          <div class="flex justify-between text-xs mb-1">
+            <span class="text-slate-300 font-medium">Min SAR Confidence</span>
+            <span id="valMinConf" class="font-mono-tech font-bold text-sky-400">55%</span>
+          </div>
+          <input id="sliderMinConf" type="range" min="0.30" max="0.95" step="0.05" value="0.55" />
+          <div class="flex justify-between font-mono-tech text-[9px] text-slate-500 mt-0.5">
+            <span>30% (Sensitive)</span>
+            <span>95% (High SNR)</span>
+          </div>
+        </div>
+
+        <!-- Slider 3: Platform Exclusion Radius -->
+        <div>
+          <div class="flex justify-between text-xs mb-1">
+            <span class="text-slate-300 font-medium">Platform Mask Radius</span>
+            <span id="valPlatformBuffer" class="font-mono-tech font-bold text-amber-400">1000 m</span>
+          </div>
+          <input id="sliderPlatformBuffer" type="range" min="500" max="3000" step="100" value="1000" />
+          <div class="flex justify-between font-mono-tech text-[9px] text-slate-500 mt-0.5">
+            <span>500 m</span>
+            <span>3000 m</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tactical Layer Toggles -->
+      <div class="bg-[#131936] border border-slate-700/80 rounded-xl p-3 space-y-2">
+        <div class="font-mono-tech text-[11px] uppercase font-bold text-slate-300 border-b border-slate-800 pb-1.5">
+          Tactical Map Layers
+        </div>
+
+        <label class="flex items-center justify-between text-xs cursor-pointer py-0.5">
+          <span class="flex items-center gap-2 text-slate-200">
+            <span class="w-3 h-3 rounded-full bg-[#ff4d4f] inline-block border border-white"></span>
+            Dark Vessels (Unmatched)
+          </span>
+          <input type="checkbox" id="chkLayerDark" checked class="accent-[#ff4d4f] w-4 h-4 rounded cursor-pointer" />
+        </label>
+
+        <label class="flex items-center justify-between text-xs cursor-pointer py-0.5">
+          <span class="flex items-center gap-2 text-slate-200">
+            <span class="w-3 h-3 rounded-full bg-[#00f2fe] inline-block"></span>
+            Matched Vessels &amp; Vectors
+          </span>
+          <input type="checkbox" id="chkLayerMatched" checked class="accent-[#00f2fe] w-4 h-4 rounded cursor-pointer" />
+        </label>
+
+        <label class="flex items-center justify-between text-xs cursor-pointer py-0.5">
+          <span class="flex items-center gap-2 text-slate-200">
+            <span class="w-3 h-0.5 bg-cyan-400 inline-block"></span>
+            AIS Trajectories &amp; Interp.
+          </span>
+          <input type="checkbox" id="chkLayerAisTracks" checked class="accent-[#00f2fe] w-4 h-4 rounded cursor-pointer" />
+        </label>
+
+        <label class="flex items-center justify-between text-xs cursor-pointer py-0.5">
+          <span class="flex items-center gap-2 text-slate-200">
+            <span class="w-3 h-3 rounded-full border border-slate-400 inline-block"></span>
+            All SAR Detections
+          </span>
+          <input type="checkbox" id="chkLayerAllSar" checked class="accent-blue-500 w-4 h-4 rounded cursor-pointer" />
+        </label>
+
+        <label class="flex items-center justify-between text-xs cursor-pointer py-0.5">
+          <span class="flex items-center gap-2 text-slate-200">
+            <span class="w-2.5 h-2.5 bg-[#ffb800] rotate-45 inline-block"></span>
+            Offshore Platforms &amp; Rings
+          </span>
+          <input type="checkbox" id="chkLayerPlatforms" checked class="accent-amber-400 w-4 h-4 rounded cursor-pointer" />
+        </label>
+
+        <label class="flex items-center justify-between text-xs cursor-pointer py-0.5">
+          <span class="flex items-center gap-2 text-slate-200">
+            <span class="w-3 h-3 border border-dashed border-purple-400 inline-block"></span>
+            AOI Box &amp; Hormuz TSS Lanes
+          </span>
+          <input type="checkbox" id="chkLayerAoi" checked class="accent-purple-400 w-4 h-4 rounded cursor-pointer" />
+        </label>
+      </div>
+
+      <!-- Export Action Bar -->
+      <div class="bg-[#131936] border border-slate-700/80 rounded-xl p-3 space-y-2 mt-auto">
+        <div class="font-mono-tech text-[10px] uppercase text-slate-400">Export Team Maya Dark Alerts</div>
+        <div class="grid grid-cols-2 gap-2">
+          <button id="btnExportCsv" class="py-1.5 px-2 rounded-lg bg-[#4f8cff]/20 hover:bg-[#4f8cff]/35 border border-[#4f8cff]/60 text-sky-200 font-mono-tech text-xs font-bold transition">
+            &darr; CSV
+          </button>
+          <button id="btnExportGeoJson" class="py-1.5 px-2 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-400/50 text-cyan-200 font-mono-tech text-xs font-bold transition">
+            &darr; GeoJSON
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- CENTER: LEAFLET MAP CANVAS + 3-WAY BASEMAP TOOLBAR + FLOATING INSPECTOR CARD -->
+    <div class="flex-1 relative h-[480px] lg:h-auto">
+      <div id="map" class="osm-dark-filter"></div>
+
+      <!-- Top-Left Map Overlay: Coordinates, Reset Zoom & Synthetic Overlay Pill -->
+      <div class="absolute bottom-7 left-3 z-[400] flex flex-wrap items-center gap-2 pointer-events-auto">
+        <div id="mouseCoordBox" class="bg-[#0a0d1a]/90 border border-slate-700 px-2.5 py-1 rounded-md font-mono-tech text-[11px] text-slate-300 shadow">
+          LON: 55.7500&deg; E | LAT: 25.8500&deg; N
+        </div>
+        <button id="btnResetBounds" class="bg-[#0a0d1a]/90 hover:bg-[#161f42] border border-blue-500/40 px-2.5 py-1 rounded-md font-mono-tech text-[11px] text-sky-300 shadow transition">
+          Reset AOI Zoom
+        </button>
+        <div class="hidden sm:flex items-center gap-1.5 bg-[#2a1f05]/90 border border-[#ffb800]/70 px-2.5 py-1 rounded-md font-mono-tech text-[10px] text-amber-200 shadow">
+          <span class="w-1.5 h-1.5 rounded-full bg-[#ffb800]"></span>
+          <span>DEMO DATA // TEAM MAYA</span>
+        </div>
+      </div>
+
+      <!-- Top-Right Map Toolbar: 3-Way Keyless Basemap Switcher -->
+      <div class="absolute top-3 right-3 z-[400] flex items-center bg-[#0a0d1a]/95 border border-slate-700 rounded-lg p-1 shadow-xl pointer-events-auto">
+        <span class="font-mono-tech text-[10px] text-slate-400 uppercase px-2 hidden sm:inline">Basemap:</span>
+        <button id="btnBaseVector" class="px-2.5 py-1 rounded text-[11px] font-mono-tech font-bold text-slate-300 hover:text-white transition" title="100% Offline High-Contrast GeoJSON Vector Chart">
+          Offline Vector Chart
+        </button>
+        <button id="btnBaseOsmDark" class="px-2.5 py-1 rounded text-[11px] font-mono-tech font-bold bg-[#4f8cff] text-white transition" title="Keyless OpenStreetMap with Dark Radar Navy CSS Filter">
+          Dark Nautical (OSM)
+        </button>
+        <button id="btnBaseEsriSat" class="px-2.5 py-1 rounded text-[11px] font-mono-tech font-bold text-slate-300 hover:text-white transition" title="Keyless Esri World Imagery Satellite Basemap">
+          Satellite / Ocean (Esri)
+        </button>
+      </div>
+
+      <!-- Floating Target Detail Inspector Card (Bottom Left of Map) -->
+      <div id="inspectorCard" class="hidden absolute bottom-4 left-4 right-4 md:right-auto md:w-[420px] bg-[#0a0d1a]/95 border-2 border-[#ff4d4f] rounded-xl p-4 shadow-2xl z-[450] backdrop-blur-md">
+        <div class="flex items-start justify-between border-b border-slate-800 pb-2 mb-2.5">
+          <div>
+            <div class="flex items-center gap-2">
+              <span id="inspStatusBadge" class="px-2 py-0.5 rounded text-[10px] font-mono-tech font-bold uppercase bg-[#ff4d4f] text-white">
+                DARK VESSEL ALERT
+              </span>
+              <span id="inspDetId" class="font-mono-tech text-sm font-bold text-white">S1-1018-14</span>
+            </div>
+            <p id="inspTimestamp" class="font-mono-tech text-[10px] text-slate-400 mt-0.5">2026-10-18T14:22:00Z</p>
+          </div>
+          <button id="btnCloseInspector" class="text-slate-400 hover:text-white text-sm font-mono-tech px-1.5 py-0.5 rounded bg-slate-800/80">
+            &times; ESC
+          </button>
+        </div>
+
+        <!-- Radar Signature Grid -->
+        <div class="grid grid-cols-3 gap-2 mb-3">
+          <div class="bg-[#131936] p-2 rounded-lg border border-slate-800">
+            <div class="font-mono-tech text-[9px] uppercase text-slate-400">Lon / Lat</div>
+            <div id="inspCoords" class="font-mono-tech text-[11px] font-bold text-white mt-0.5">25.980&deg;N, 56.240&deg;E</div>
+          </div>
+          <div class="bg-[#131936] p-2 rounded-lg border border-slate-800">
+            <div class="font-mono-tech text-[9px] uppercase text-slate-400">Est. Length / Area</div>
+            <div id="inspLength" class="font-mono-tech text-[11px] font-bold text-sky-300 mt-0.5">114 m (3100 m&sup2;)</div>
+          </div>
+          <div class="bg-[#131936] p-2 rounded-lg border border-slate-800">
+            <div class="font-mono-tech text-[9px] uppercase text-slate-400">VV Backscatter / Conf</div>
+            <div id="inspBackscatter" class="font-mono-tech text-[11px] font-bold text-cyan-300 mt-0.5">+2.4 dB (89%)</div>
+          </div>
+        </div>
+
+        <!-- Nearest AIS Correlation Diagnostics -->
+        <div class="bg-[#111630] border border-slate-700/80 rounded-lg p-2.5 text-xs space-y-1.5">
+          <div class="font-mono-tech text-[10px] uppercase text-slate-400 font-bold">
+            Nearest Interpolated AIS Vessel at t<sub>SAR</sub>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">Vessel / MMSI:</span>
+            <span id="inspNearestAisName" class="font-mono-tech font-bold text-cyan-300">MT GULF HORIZON (470882000)</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">Haversine Distance:</span>
+            <span id="inspNearestAisDist" class="font-mono-tech font-bold text-white">4,820 m (Outside Buffer)</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">AIS Time Delta (&Delta;t):</span>
+            <span id="inspNearestAisDt" class="font-mono-tech text-slate-300">4.0 min from t<sub>SAR</sub></span>
+          </div>
+          <div class="flex justify-between border-t border-slate-800 pt-1">
+            <span class="text-slate-400">Nearest Offshore Rig:</span>
+            <span id="inspNearestPlatform" class="font-mono-tech text-amber-300">Mubarak Field (18.4 km)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT SIDEBAR: DARK VESSEL ALERT FEED & MATCH LOG -->
+    <aside class="w-full lg:w-96 bg-[#0c1024]/95 border-t lg:border-t-0 lg:border-l border-slate-800 flex flex-col overflow-hidden z-20 shrink-0">
+      <div class="p-3 border-b border-slate-800 flex items-center justify-between">
+        <div>
+          <h2 class="text-xs font-extrabold uppercase tracking-wider text-white flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-[#ff4d4f]"></span>
+            Team Maya Dark Vessel Alerts
+          </h2>
+          <p class="font-mono-tech text-[10px] text-slate-400">Click any alert to zoom &amp; inspect</p>
+        </div>
+        <span id="alertFeedCountBadge" class="font-mono-tech text-xs font-bold px-2 py-0.5 rounded bg-[#ff4d4f]/20 text-[#ff4d4f] border border-[#ff4d4f]/50">
+          0 ALERTS
+        </span>
+      </div>
+
+      <!-- Scrollable Alert Cards -->
+      <div id="darkAlertList" class="flex-1 overflow-y-auto p-3 space-y-2.5">
+        <!-- Populated by JS -->
+      </div>
+
+      <!-- Bottom Collapsible Summary of Matched AIS Vessels -->
+      <div class="border-t border-slate-800 bg-[#090d1f] p-3">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="font-mono-tech text-[10px] uppercase text-cyan-400 font-bold">AIS-Verified Vessels in Scene</span>
+          <span id="matchedListCountBadge" class="font-mono-tech text-[10px] text-slate-400">0 matched</span>
+        </div>
+        <div id="matchedCompactList" class="max-h-32 overflow-y-auto space-y-1 pr-1">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- ==================== MAIN WORKSPACE: TAB 2 (METHOD & LIMITS) ==================== -->
+  <section id="viewMethodLimits" class="hidden flex-1 overflow-y-auto p-6 md:p-10 bg-gradient-to-b from-[#0a0d1a] to-[#15122b]">
+    <div class="max-w-6xl mx-auto space-y-8">
+      
+      <!-- Header Banner -->
+      <div class="border-b border-blue-500/30 pb-5 flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <span class="font-mono-tech text-xs uppercase text-sky-400 font-bold">Team Maya // Architecture &amp; Scientific Integrity</span>
+          <h1 class="text-2xl md:text-3xl font-extrabold text-white mt-1">
+            SAR-AIS Spatio-Temporal Fusion Pipeline &amp; Operational Limits
+          </h1>
+        </div>
+        <div class="font-mono-tech text-xs text-slate-300 bg-[#131936] px-3.5 py-2 rounded-lg border border-slate-700">
+          Sentinel-1 IW GRD (VV) &times; ITU Terrestrial/Satellite AIS
+        </div>
+      </div>
+
+      <!-- Interactive SVG Pipeline Diagram + 6-Stage Breakdown -->
+      <div class="bg-[#0e142b]/90 border border-slate-700/80 rounded-2xl p-6 space-y-5">
+        <div class="flex items-center justify-between">
+          <h2 class="font-mono-tech text-xs uppercase text-cyan-300 font-bold">
+            1. Team Maya End-to-End Automated Detection &amp; Correlation Pipeline
+          </h2>
+          <span class="font-mono-tech text-[10px] text-slate-400">GEE Sentinel-1 CSV + AIS Stream &rarr; Dark Vessel GeoJSON</span>
+        </div>
+
+        <!-- Responsive SVG Architecture Flowchart -->
+        <div class="w-full overflow-x-auto bg-[#080b18] border border-slate-800 rounded-xl p-4">
+          <svg viewBox="0 0 980 125" class="w-full min-w-[760px] h-auto">
+            <defs>
+              <linearGradient id="mayaGradPink" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#4f8cff" stop-opacity="0.28"/>
+                <stop offset="100%" stop-color="#6d4aff" stop-opacity="0.28"/>
+              </linearGradient>
+              <linearGradient id="mayaGradCyan" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#00f2fe" stop-opacity="0.22"/>
+                <stop offset="100%" stop-color="#0284c7" stop-opacity="0.22"/>
+              </linearGradient>
+              <marker id="arrowCyan" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1 L 10 5 L 0 9 z" fill="#00f2fe" />
+              </marker>
+              <marker id="arrowPink" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1 L 10 5 L 0 9 z" fill="#4f8cff" />
+              </marker>
+            </defs>
+
+            <!-- Node 1: S1 Ingest -->
+            <rect x="10" y="20" width="140" height="85" rx="10" fill="url(#mayaGradPink)" stroke="#4f8cff" stroke-width="1.5"/>
+            <text x="80" y="45" text-anchor="middle" fill="#4f8cff" font-family="JetBrains Mono" font-size="10" font-weight="bold">01. SAR INGEST</text>
+            <text x="80" y="65" text-anchor="middle" fill="#ffffff" font-family="Inter" font-size="11" font-weight="bold">Sentinel-1 IW VV</text>
+            <text x="80" y="83" text-anchor="middle" fill="#94a3b8" font-family="JetBrains Mono" font-size="9">10m GRD &sigma;&deg; (dB)</text>
+
+            <line x1="150" y1="62" x2="172" y2="62" stroke="#4f8cff" stroke-width="2" marker-end="url(#arrowPink)"/>
+
+            <!-- Node 2: Rig Masking -->
+            <rect x="175" y="20" width="140" height="85" rx="10" fill="#151c3b" stroke="#ffb800" stroke-width="1.5"/>
+            <text x="245" y="45" text-anchor="middle" fill="#ffb800" font-family="JetBrains Mono" font-size="10" font-weight="bold">02. INFRA MASK</text>
+            <text x="245" y="65" text-anchor="middle" fill="#ffffff" font-family="Inter" font-size="11" font-weight="bold">Coast &amp; Offshore Rigs</text>
+            <text x="245" y="83" text-anchor="middle" fill="#94a3b8" font-family="JetBrains Mono" font-size="9">1.0 km Buffer Ring</text>
+
+            <line x1="315" y1="62" x2="337" y2="62" stroke="#4f8cff" stroke-width="2" marker-end="url(#arrowPink)"/>
+
+            <!-- Node 3: CFAR Detector -->
+            <rect x="340" y="20" width="140" height="85" rx="10" fill="url(#mayaGradPink)" stroke="#4f8cff" stroke-width="1.5"/>
+            <text x="410" y="45" text-anchor="middle" fill="#4f8cff" font-family="JetBrains Mono" font-size="10" font-weight="bold">03. CFAR + RCS</text>
+            <text x="410" y="65" text-anchor="middle" fill="#ffffff" font-family="Inter" font-size="11" font-weight="bold">Blob &amp; Length Est.</text>
+            <text x="410" y="83" text-anchor="middle" fill="#94a3b8" font-family="JetBrains Mono" font-size="9">vv_db + area_m2</text>
+
+            <line x1="480" y1="62" x2="502" y2="62" stroke="#00f2fe" stroke-width="2" marker-end="url(#arrowCyan)"/>
+
+            <!-- Node 4: AIS Temporal Interpolation -->
+            <rect x="505" y="20" width="140" height="85" rx="10" fill="url(#mayaGradCyan)" stroke="#00f2fe" stroke-width="1.5"/>
+            <text x="575" y="45" text-anchor="middle" fill="#00f2fe" font-family="JetBrains Mono" font-size="10" font-weight="bold">04. AIS KINEMATICS</text>
+            <text x="575" y="65" text-anchor="middle" fill="#ffffff" font-family="Inter" font-size="11" font-weight="bold">Sync to Exact t_SAR</text>
+            <text x="575" y="83" text-anchor="middle" fill="#94a3b8" font-family="JetBrains Mono" font-size="9">Linear + SOG/COG</text>
+
+            <line x1="645" y1="62" x2="667" y2="62" stroke="#00f2fe" stroke-width="2" marker-end="url(#arrowCyan)"/>
+
+            <!-- Node 5: 1-to-1 Haversine Solver -->
+            <rect x="670" y="20" width="140" height="85" rx="10" fill="url(#mayaGradCyan)" stroke="#00f2fe" stroke-width="1.5"/>
+            <text x="740" y="45" text-anchor="middle" fill="#00f2fe" font-family="JetBrains Mono" font-size="10" font-weight="bold">05. BIPARTITE MATCH</text>
+            <text x="740" y="65" text-anchor="middle" fill="#ffffff" font-family="Inter" font-size="11" font-weight="bold">1-to-1 Haversine</text>
+            <text x="740" y="83" text-anchor="middle" fill="#94a3b8" font-family="JetBrains Mono" font-size="9">500m Buffer Solver</text>
+
+            <line x1="810" y1="62" x2="832" y2="62" stroke="#4f8cff" stroke-width="2" marker-end="url(#arrowPink)"/>
+
+            <!-- Node 6: Dark Vessel Alert -->
+            <rect x="835" y="20" width="135" height="85" rx="10" fill="#2e1214" stroke="#ff4d4f" stroke-width="2"/>
+            <text x="902" y="45" text-anchor="middle" fill="#ff4d4f" font-family="JetBrains Mono" font-size="10" font-weight="bold">06. DARK ALERTS</text>
+            <text x="902" y="65" text-anchor="middle" fill="#ffffff" font-family="Inter" font-size="11" font-weight="bold">Unmatched Hulls</text>
+            <text x="902" y="83" text-anchor="middle" fill="#fbcfe8" font-family="JetBrains Mono" font-size="9">CSV &amp; GeoJSON</text>
+          </svg>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="bg-[#101631] border border-slate-700/80 rounded-xl p-4">
+            <div class="font-mono-tech text-xs text-sky-400 uppercase font-bold mb-1">Length &amp; Confidence Model</div>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              Accounting for Sentinel-1 IW impulse response broadening, estimated hull length and detection confidence are derived from radar cross-section:
+            </p>
+            <div class="my-2 p-2 bg-[#080b1a] rounded font-mono-tech text-xs text-cyan-300">
+              L_est = sqrt(area_m2 * 4.2)<br/>
+              Conf = 0.65 * norm(vv_db) + 0.35 * norm(area_m2)
+            </div>
+          </div>
+
+          <div class="bg-[#101631] border border-slate-700/80 rounded-xl p-4">
+            <div class="font-mono-tech text-xs text-cyan-400 uppercase font-bold mb-1">Temporal AIS Interpolation</div>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              Because AIS broadcasts asynchronously (every 2 sec to 6 min), comparing raw pings to SAR causes false dark alerts. Team Maya interpolates every track to $t_{\text{SAR}}$:
+            </p>
+            <div class="my-2 p-2 bg-[#080b1a] rounded font-mono-tech text-xs text-cyan-300">
+              alpha = (t_SAR - t_1) / (t_2 - t_1)<br/>
+              P(t_SAR) = P_1 + alpha * (P_2 - P_1)
+            </div>
+          </div>
+
+          <div class="bg-[#101631] border border-slate-700/80 rounded-xl p-4">
+            <div class="font-mono-tech text-xs text-amber-400 uppercase font-bold mb-1">Azimuth Doppler Shift Allowance</div>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              A radial velocity $v_r$ shifts a moving ship in the SAR azimuth direction by $\Delta x = (R / V_{\text{sat}}) v_r$ (typically 150–450 m), motivating our default 500 m matching buffer.
+            </p>
+            <div class="my-2 p-2 bg-[#080b1a] rounded font-mono-tech text-xs text-amber-300">
+              Default Buffer = 500 m (Adjustable 100-2000 m)
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Honest Remote-Sensing Limitations Matrix -->
+      <div class="bg-[#0e142b]/90 border border-blue-500/30 rounded-2xl p-6">
+        <h2 class="font-mono-tech text-xs uppercase text-sky-400 font-bold mb-4">
+          2. Honest Physical &amp; Operational Limitations (Team Maya Judge Briefing)
+        </h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="bg-[#151c3b] border border-slate-700/80 rounded-xl p-4">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-bold text-white">1. Spatial Resolution Floor (&lt; 15–20 m Missed)</span>
+              <span class="font-mono-tech text-[10px] px-2 py-0.5 rounded bg-blue-500/20 text-sky-300">SENSOR PHYSICS</span>
+            </div>
+            <p class="text-xs text-slate-300 mt-2 leading-relaxed">
+              Sentinel-1 IW mode has a ~20&times;22 m spatial resolution (10 m pixel spacing). Small wooden dhows, fiberglass skiffs, and artisanal fishing boats below 15–20 m produce weak radar cross-sections (RCS) indistinguishable from background Bragg sea scatter, especially at high incidence angles.
+            </p>
+          </div>
+
+          <div class="bg-[#151c3b] border border-slate-700/80 rounded-xl p-4">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-bold text-white">2. Wind/Wave Bragg Clutter &amp; Azimuth Ambiguities</span>
+              <span class="font-mono-tech text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">FALSE ALARMS</span>
+            </div>
+            <p class="text-xs text-slate-300 mt-2 leading-relaxed">
+              Strong Shamal winds (&gt;10 m/s) in the Arabian Gulf generate whitecaps, steep breaking waves, and internal wave wakes that elevate VV backscatter and trigger false alarms. Bright coastal cranes at Jebel Ali can also cause ghost azimuth ambiguities kilometers offshore.
+            </p>
+          </div>
+
+          <div class="bg-[#151c3b] border border-slate-700/80 rounded-xl p-4">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-bold text-white">3. AIS Spoofing &amp; Reception Gaps</span>
+              <span class="font-mono-tech text-[10px] px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300">RF &amp; SPOOFING</span>
+            </div>
+            <p class="text-xs text-slate-300 mt-2 leading-relaxed">
+              An unmatched SAR detection is not automatically illicit. In dense hubs like Jebel Ali and the Strait of Hormuz, VHF slot collisions degrade satellite AIS reception. Conversely, bad actors may broadcast spoofed GNSS coordinates miles away from their true physical hull position.
+            </p>
+          </div>
+
+          <div class="bg-[#151c3b] border border-slate-700/80 rounded-xl p-4">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-bold text-white">4. Orbital Revisit Interval (Days Apart, Not Continuous)</span>
+              <span class="font-mono-tech text-[10px] px-2 py-0.5 rounded bg-purple-500/20 text-purple-300">TEMPORAL GAP</span>
+            </div>
+            <p class="text-xs text-slate-300 mt-2 leading-relaxed">
+              Sun-synchronous SAR satellites image the Strait of Hormuz only every 6 to 12 days per orbit track. SAR provides high-confidence wide-area snapshots to cue commercial X-band SAR tasking (ICEYE, Capella), RF geolocation, or coastal patrol aircraft.
+            </p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ==================== MODAL: LIVE CSV DATA IMPORTER ==================== -->
+  <div id="modalCsvImporter" class="hidden fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div class="bg-[#0e1329] border-2 border-blue-500/60 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div>
+          <h3 class="text-base font-extrabold text-white">Team Maya // Swap In Live Earth Engine SAR &amp; AIS CSVs</h3>
+          <p class="font-mono-tech text-[11px] text-slate-400">Zero code changes required — parsed directly in browser memory</p>
+        </div>
+        <button id="btnCloseModal" class="text-slate-400 hover:text-white font-mono-tech text-sm px-2 py-1 rounded bg-slate-800">&times;</button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div class="bg-[#141b38] border border-slate-700 rounded-xl p-3.5">
+          <label class="block font-mono-tech text-sky-400 uppercase font-bold mb-1">
+            1. Sentinel-1 SAR Detections CSV (GEE Export)
+          </label>
+          <p class="font-mono-tech text-[11px] text-slate-400 mb-2">
+            Required columns: <code class="text-slate-200">lon,lat,time_utc,vv_db,area_m2</code> (optional: <code class="text-slate-200">det_id</code>)
+          </p>
+          <input type="file" id="fileInputSar" accept=".csv" class="block w-full text-xs text-slate-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-mono-tech file:bg-blue-600 file:text-white hover:file:bg-blue-500 cursor-pointer" />
+        </div>
+
+        <div class="bg-[#141b38] border border-slate-700 rounded-xl p-3.5">
+          <label class="block font-mono-tech text-cyan-400 uppercase font-bold mb-1">
+            2. AIS Broadcast Tracks CSV
+          </label>
+          <p class="font-mono-tech text-[11px] text-slate-400 mb-2">
+            Required columns: <code class="text-slate-200">mmsi,time_utc,lon,lat,sog,cog,name,ship_type</code>
+          </p>
+          <input type="file" id="fileInputAis" accept=".csv" class="block w-full text-xs text-slate-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-mono-tech file:bg-cyan-600 file:text-white hover:file:bg-cyan-500 cursor-pointer" />
+        </div>
+
+        <div id="importStatusMsg" class="hidden font-mono-tech text-xs p-2.5 rounded bg-slate-900 border border-slate-700 text-cyan-300"></div>
+      </div>
+
+      <div class="flex items-center justify-between pt-2 border-t border-slate-800">
+        <button id="btnRestoreSynthetic" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono-tech text-xs">
+          Restore Synthetic Demo Data
+        </button>
+        <button id="btnApplyCsvImport" class="px-4 py-1.5 rounded-lg bg-[#4f8cff] hover:bg-blue-600 text-white font-mono-tech text-xs font-bold">
+          Run Pipeline on Uploaded CSVs
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== APPLICATION SCRIPT ==================== -->
+  <script>
+    /***************************************************************************
+     * 1. CLEARLY SEPARATED DEMO DATA BLOCK (CSV & GEOGRAPHIC DEFINITIONS)
+     * -------------------------------------------------------------------------
+     * Team: TEAM MAYA
+     * AOI: Waters off Jebel Ali to Strait of Hormuz
+     * Bounding Box: Lon 54.85°E to 56.60°E, Lat 24.95°N to 26.55°N
+     * 3 Sentinel-1 IW VV Scene Timestamps:
+     *   - Pass 1: 2026-10-18T14:22:00Z (18 Detections)
+     *   - Pass 2: 2026-10-24T02:15:00Z (18 Detections)
+     *   - Pass 3: 2026-10-30T14:22:00Z (18 Detections)
+     *   - Pass 4: ALL SCENES (Aggregate 54 Detections across all 3 passes)
+     ***************************************************************************/
+
+    const AOI_BOUNDS = {
+      minLon: 54.85,
+      maxLon: 56.60,
+      minLat: 24.95,
+      maxLat: 26.55
+    };
+
+    // 4 Known Fixed Offshore Oil/Gas Platforms in the Jebel Ali -> Hormuz AOI
+    const KNOWN_OFFSHORE_PLATFORMS = [
+      { id: "PLAT-01", name: "Fateh Complex", lon: 54.9600, lat: 25.5600, operator: "Dubai Offshore (Synth)" },
+      { id: "PLAT-02", name: "Mubarak Field", lon: 55.3400, lat: 25.8200, operator: "Sharjah Offshore (Synth)" },
+      { id: "PLAT-03", name: "Saleh Platform", lon: 55.7200, lat: 26.0800, operator: "RAK Gas (Synth)" },
+      { id: "PLAT-04", name: "Bukha Platform", lon: 56.1200, lat: 26.1800, operator: "Musandam Energy (Synth)" }
+    ];
+
+    // High-Precision Vector Coastline Polygons (UAE, Dubai, Sharjah, RAK, Musandam Peninsula, Qeshm & Hormuz Islands, Iran Coast)
+    // Guarantees razor-sharp nautical chart visuals with ZERO API keys or offline failures
+    const OFFLINE_COASTLINE_POLYGONS = [
+      {
+        name: "UAE & Musandam Peninsula Mainland",
+        coords: [
+          [24.85, 54.75], [24.96, 55.02], [25.01, 55.06], [25.06, 55.12],
+          [25.22, 55.27], [25.36, 55.38], [25.55, 55.54], [25.78, 55.94],
+          [26.05, 56.08], [26.22, 56.20], [26.38, 56.38], [26.37, 56.51],
+          [26.15, 56.36], [25.85, 56.35], [25.34, 56.36], [24.85, 56.40],
+          [24.85, 54.75]
+        ]
+      },
+      {
+        name: "Qeshm Island (Strait of Hormuz North)",
+        coords: [
+          [26.54, 55.26], [26.68, 55.58], [26.86, 56.02], [26.96, 56.26],
+          [26.88, 56.28], [26.68, 55.92], [26.52, 55.45], [26.54, 55.26]
+        ]
+      },
+      {
+        name: "Iranian Northern Coastline",
+        coords: [
+          [26.62, 54.80], [27.15, 56.10], [27.12, 56.75], [26.50, 56.75],
+          [26.85, 56.45], [27.02, 56.15], [26.75, 55.40], [26.62, 54.80]
+        ]
+      },
+      {
+        name: "Larak & Hormuz Islands",
+        coords: [
+          [26.82, 56.32], [26.88, 56.40], [26.84, 56.42], [26.82, 56.32]
+        ]
+      }
+    ];
+
+    // Traffic Separation Scheme (TSS) Shipping Lanes for tactical context
+    const SHIPPING_LANES = [
+      {
+        name: "Hormuz Inbound TSS Lane",
+        coords: [[25.50, 54.95], [25.88, 55.48], [26.28, 56.10], [26.44, 56.42], [26.32, 56.58]]
+      },
+      {
+        name: "Hormuz Outbound TSS Lane",
+        coords: [[26.24, 56.58], [26.36, 56.40], [26.20, 56.12], [25.80, 55.54], [25.40, 55.02]]
+      }
+    ];
+
+    // [Showcase rows S1-*-19..24 & MMSI 4704-4707xxxxx are extra SYNTHETIC rows added to exercise Hungarian assignment, multi-temporal tracks, AIS-gap uncertainty and spoofing checks]
+    // Raw Sentinel-1 GRD IW VV Detections CSV (54 rows across 3 scene acquisition dates)
+    const SYNTHETIC_SAR_CSV = `det_id,lon,lat,time_utc,vv_db,area_m2
+S1-1018-01,54.9602,25.5601,2026-10-18T14:22:00Z,5.8,3400
+S1-1018-02,55.3398,25.8202,2026-10-18T14:22:00Z,6.1,3900
+S1-1018-03,55.0410,25.0912,2026-10-18T14:22:00Z,3.4,14200
+S1-1018-04,55.1215,25.2810,2026-10-18T14:22:00Z,4.2,21500
+S1-1018-05,55.2610,25.4908,2026-10-18T14:22:00Z,1.9,8600
+S1-1018-06,55.4812,25.6905,2026-10-18T14:22:00Z,5.1,26400
+S1-1018-07,55.6610,25.8912,2026-10-18T14:22:00Z,2.8,11800
+S1-1018-08,55.8408,26.0410,2026-10-18T14:22:00Z,3.9,16500
+S1-1018-09,56.0415,26.2406,2026-10-18T14:22:00Z,4.6,23800
+S1-1018-10,56.2512,26.3710,2026-10-18T14:22:00Z,2.2,9400
+S1-1018-11,56.4210,26.3105,2026-10-18T14:22:00Z,3.1,13400
+S1-1018-12,56.4715,25.9210,2026-10-18T14:22:00Z,1.4,6200
+S1-1018-13,55.1810,25.6812,2026-10-18T14:22:00Z,0.8,5100
+S1-1018-14,55.5850,25.5220,2026-10-18T14:22:00Z,2.9,12900
+S1-1018-15,55.9520,25.8450,2026-10-18T14:22:00Z,3.7,15800
+S1-1018-16,56.1850,26.4120,2026-10-18T14:22:00Z,1.8,7400
+S1-1018-17,56.5120,26.1450,2026-10-18T14:22:00Z,-0.4,3100
+S1-1018-18,55.0250,25.3820,2026-10-18T14:22:00Z,-9.2,420
+S1-1024-01,54.9599,25.5598,2026-10-24T02:15:00Z,5.9,3450
+S1-1024-02,55.7203,26.0799,2026-10-24T02:15:00Z,5.4,2950
+S1-1024-03,56.1198,26.1802,2026-10-24T02:15:00Z,5.1,2800
+S1-1024-04,55.0810,25.1610,2026-10-24T02:15:00Z,4.0,19200
+S1-1024-05,55.2112,25.3905,2026-10-24T02:15:00Z,2.5,10400
+S1-1024-06,55.3910,25.6112,2026-10-24T02:15:00Z,4.9,25100
+S1-1024-07,55.5608,25.7910,2026-10-24T02:15:00Z,3.2,14800
+S1-1024-08,55.7712,25.9708,2026-10-24T02:15:00Z,1.7,7800
+S1-1024-09,55.9810,26.1712,2026-10-24T02:15:00Z,4.4,22100
+S1-1024-10,56.1915,26.3308,2026-10-24T02:15:00Z,3.6,17400
+S1-1024-11,56.3710,26.3612,2026-10-24T02:15:00Z,2.9,11900
+S1-1024-12,56.4912,26.1805,2026-10-24T02:15:00Z,1.5,6800
+S1-1024-13,55.1450,25.7950,2026-10-24T02:15:00Z,3.8,16200
+S1-1024-14,55.4920,25.4480,2026-10-24T02:15:00Z,2.1,9100
+S1-1024-15,55.8640,26.2650,2026-10-24T02:15:00Z,4.1,18900
+S1-1024-16,56.3150,26.4420,2026-10-24T02:15:00Z,0.9,4600
+S1-1024-17,56.5280,25.7840,2026-10-24T02:15:00Z,2.4,8300
+S1-1024-18,55.6420,25.6120,2026-10-24T02:15:00Z,-8.6,480
+S1-1030-01,55.3402,25.8198,2026-10-30T14:22:00Z,6.0,3850
+S1-1030-02,55.7198,26.0801,2026-10-30T14:22:00Z,5.5,3000
+S1-1030-03,54.9912,25.1208,2026-10-30T14:22:00Z,3.5,15400
+S1-1030-04,55.1610,25.3312,2026-10-30T14:22:00Z,4.7,24200
+S1-1030-05,55.3208,25.5410,2026-10-30T14:22:00Z,2.0,8900
+S1-1030-06,55.5112,25.7308,2026-10-30T14:22:00Z,3.9,18100
+S1-1030-07,55.6910,25.9212,2026-10-30T14:22:00Z,4.3,20800
+S1-1030-08,55.9108,26.1110,2026-10-30T14:22:00Z,2.6,11200
+S1-1030-09,56.1112,26.2808,2026-10-30T14:22:00Z,5.0,27100
+S1-1030-10,56.2910,26.3812,2026-10-30T14:22:00Z,3.3,14100
+S1-1030-11,56.4512,26.2608,2026-10-30T14:22:00Z,1.9,8200
+S1-1030-12,56.4810,25.8612,2026-10-30T14:22:00Z,2.8,10900
+S1-1030-13,55.0840,25.4920,2026-10-30T14:22:00Z,3.1,13600
+S1-1030-14,55.4380,25.9420,2026-10-30T14:22:00Z,4.5,21400
+S1-1030-15,55.8250,25.7640,2026-10-30T14:22:00Z,1.6,6900
+S1-1030-16,56.0480,26.3950,2026-10-30T14:22:00Z,2.7,11400
+S1-1030-17,56.3840,26.4580,2026-10-30T14:22:00Z,0.5,3900
+S1-1030-18,56.5350,26.0420,2026-10-30T14:22:00Z,3.4,14900
+S1-1024-19,55.6240,25.9800,2026-10-24T02:15:00Z,3.0,9000
+S1-1024-20,55.6155,25.9800,2026-10-24T02:15:00Z,3.1,9200
+S1-1018-19,55.3000,25.6600,2026-10-18T14:22:00Z,2.4,8600
+S1-1024-21,55.3040,25.6630,2026-10-24T02:15:00Z,2.7,8900
+S1-1030-19,55.2975,25.6585,2026-10-30T14:22:00Z,2.2,8300
+S1-1018-20,55.1006,26.0196,2026-10-18T14:22:00Z,3.4,16000
+S1-1024-22,55.0991,26.0204,2026-10-24T02:15:00Z,3.4,16000
+S1-1030-20,55.1011,26.0206,2026-10-30T14:22:00Z,3.4,16000
+S1-1024-23,55.2410,25.7210,2026-10-24T02:15:00Z,3.6,14500
+S1-1024-24,55.3210,26.0833,2026-10-24T02:15:00Z,3.3,13800`;
+
+    // Raw AIS Multi-Point Kinematic Tracks CSV (bracketing all 3 passes: 2026-10-18T14:22:00Z, 2026-10-24T02:15:00Z, 2026-10-30T14:22:00Z)
+    const SYNTHETIC_AIS_CSV = `mmsi,time_utc,lon,lat,sog,cog,name,ship_type
+470101000,2026-10-18T14:10:00Z,55.0200,25.0700,12.4,45,JEBEL ALI EXPRESS,Container
+470101000,2026-10-18T14:34:00Z,55.0600,25.1100,12.4,45,JEBEL ALI EXPRESS,Container
+470102000,2026-10-18T14:10:00Z,55.1000,25.2600,13.8,48,AL REEM TRADER,VLCC Tanker
+470102000,2026-10-18T14:34:00Z,55.1400,25.3000,13.8,48,AL REEM TRADER,VLCC Tanker
+470103000,2026-10-18T14:10:00Z,55.2400,25.4700,11.2,44,GULF FALCON,Bulk Carrier
+470103000,2026-10-18T14:34:00Z,55.2800,25.5100,11.2,44,GULF FALCON,Bulk Carrier
+470104000,2026-10-18T14:10:00Z,55.4600,25.6700,14.5,46,HORMUZ VOYAGER,LNG Carrier
+470104000,2026-10-18T14:34:00Z,55.5000,25.7100,14.5,46,HORMUZ VOYAGER,LNG Carrier
+470105000,2026-10-18T14:10:00Z,55.6400,25.8700,12.0,45,SHARJAH STAR,Chemical Tanker
+470105000,2026-10-18T14:34:00Z,55.6800,25.9100,12.0,45,SHARJAH STAR,Chemical Tanker
+470106000,2026-10-18T14:10:00Z,55.8200,26.0200,13.1,52,MUSANDAM SPIRIT,Crude Tanker
+470106000,2026-10-18T14:34:00Z,55.8600,26.0600,13.1,52,MUSANDAM SPIRIT,Crude Tanker
+470107000,2026-10-18T14:10:00Z,56.0200,26.2200,15.0,55,FUJAIRAH CROWN,ULCC Tanker
+470107000,2026-10-18T14:34:00Z,56.0600,26.2600,15.0,55,FUJAIRAH CROWN,ULCC Tanker
+470108000,2026-10-18T14:10:00Z,56.2300,26.3500,11.8,68,OMAN SEA PIONEER,General Cargo
+470108000,2026-10-18T14:34:00Z,56.2700,26.3900,11.8,68,OMAN SEA PIONEER,General Cargo
+470109000,2026-10-18T14:10:00Z,56.4400,26.3300,12.6,135,KHOR FAKKAN PRIDE,Container
+470109000,2026-10-18T14:34:00Z,56.4000,26.2900,12.6,135,KHOR FAKKAN PRIDE,Container
+470110000,2026-10-18T14:10:00Z,56.4900,25.9400,10.5,175,SOHAR BREEZE,Bulk Carrier
+470110000,2026-10-18T14:34:00Z,56.4500,25.9000,10.5,175,SOHAR BREEZE,Bulk Carrier
+470111000,2026-10-18T14:10:00Z,55.1600,25.6600,9.4,35,DUBAI OFFSHORE SUPPLIER,Supply Vessel
+470111000,2026-10-18T14:34:00Z,55.2000,25.7000,9.4,35,DUBAI OFFSHORE SUPPLIER,Supply Vessel
+470201000,2026-10-24T02:03:00Z,55.0600,25.1400,13.2,44,ARABIAN NAVIGATOR,Container
+470201000,2026-10-24T02:27:00Z,55.1000,25.1800,13.2,44,ARABIAN NAVIGATOR,Container
+470202000,2026-10-24T02:03:00Z,55.1900,25.3700,11.5,46,ZAYED MARINER,Chemical Tanker
+470202000,2026-10-24T02:27:00Z,55.2300,25.4100,11.5,46,ZAYED MARINER,Chemical Tanker
+470203000,2026-10-24T02:03:00Z,55.3700,25.5900,14.8,48,DAS ISLAND GIANT,VLCC Tanker
+470203000,2026-10-24T02:27:00Z,55.4100,25.6300,14.8,48,DAS ISLAND GIANT,VLCC Tanker
+470204000,2026-10-24T02:03:00Z,55.5400,25.7700,12.9,49,RAK HORIZON,Bulk Carrier
+470204000,2026-10-24T02:27:00Z,55.5800,25.8100,12.9,49,RAK HORIZON,Bulk Carrier
+470205000,2026-10-24T02:03:00Z,55.7500,25.9500,10.8,50,UMM AL QUWAIN PEARL,General Cargo
+470205000,2026-10-24T02:27:00Z,55.7900,25.9900,10.8,50,UMM AL QUWAIN PEARL,General Cargo
+470206000,2026-10-24T02:03:00Z,55.9600,26.1500,15.2,54,STRAIT GUARDIAN,LNG Carrier
+470206000,2026-10-24T02:27:00Z,56.0000,26.1900,15.2,54,STRAIT GUARDIAN,LNG Carrier
+470207000,2026-10-24T02:03:00Z,56.1700,26.3100,13.6,62,KHASAB SENTINEL,Crude Tanker
+470207000,2026-10-24T02:27:00Z,56.2100,26.3500,13.6,62,KHASAB SENTINEL,Crude Tanker
+470208000,2026-10-24T02:03:00Z,56.3500,26.3400,12.2,82,KALBA EXPRESS,Container
+470208000,2026-10-24T02:27:00Z,56.3900,26.3800,12.2,82,KALBA EXPRESS,Container
+470209000,2026-10-24T02:03:00Z,56.5100,26.2000,11.0,160,DIBA CARRIER,LPG Tanker
+470209000,2026-10-24T02:27:00Z,56.4700,26.1600,11.0,160,DIBA CARRIER,LPG Tanker
+470301000,2026-10-30T14:10:00Z,54.9700,25.1000,12.5,43,PALM JUMEIRAH STAR,Container
+470301000,2026-10-30T14:34:00Z,55.0100,25.1400,12.5,43,PALM JUMEIRAH STAR,Container
+470302000,2026-10-30T14:10:00Z,55.1400,25.3100,14.9,46,ABU DHABI TITAN,ULCC Tanker
+470302000,2026-10-30T14:34:00Z,55.1800,25.3500,14.9,46,ABU DHABI TITAN,ULCC Tanker
+470303000,2026-10-30T14:10:00Z,55.3000,25.5200,11.4,47,AJMAN CREST,General Cargo
+470303000,2026-10-30T14:34:00Z,55.3400,25.5600,11.4,47,AJMAN CREST,General Cargo
+470304000,2026-10-30T14:10:00Z,55.4900,25.7100,13.7,49,HAMRIYAH VANGUARD,Crude Tanker
+470304000,2026-10-30T14:34:00Z,55.5300,25.7500,13.7,49,HAMRIYAH VANGUARD,Crude Tanker
+470305000,2026-10-30T14:10:00Z,55.6700,25.9000,14.2,51,SAQR PORT PIONEER,Bulk Carrier
+470305000,2026-10-30T14:34:00Z,55.7100,25.9400,14.2,51,SAQR PORT PIONEER,Bulk Carrier
+470306000,2026-10-30T14:10:00Z,55.8900,26.0900,12.1,53,LIMA STRAIT RUNNER,Chemical Tanker
+470306000,2026-10-30T14:34:00Z,55.9300,26.1300,12.1,53,LIMA STRAIT RUNNER,Chemical Tanker
+470307000,2026-10-30T14:10:00Z,56.0900,26.2600,15.4,58,QESHM CHANNEL LNG,LNG Carrier
+470307000,2026-10-30T14:34:00Z,56.1300,26.3000,15.4,58,QESHM CHANNEL LNG,LNG Carrier
+470308000,2026-10-30T14:10:00Z,56.2700,26.3600,13.0,74,GULF OF OMAN STAR,Container
+470308000,2026-10-30T14:34:00Z,56.3100,26.4000,13.0,74,GULF OF OMAN STAR,Container
+470309000,2026-10-30T14:10:00Z,56.4700,26.2800,11.6,145,SUR MARITIME,Bulk Carrier
+470309000,2026-10-30T14:34:00Z,56.4300,26.2400,11.6,145,SUR MARITIME,Bulk Carrier
+470310000,2026-10-30T14:10:00Z,56.5000,25.8800,12.3,172,FUJAIRAH ANCHORAGE TRADER,Product Tanker
+470310000,2026-10-30T14:34:00Z,56.4600,25.8400,12.3,172,FUJAIRAH ANCHORAGE TRADER,Product Tanker
+470601000,2026-10-24T02:05:00Z,55.6200,25.9800,0.2,0,SYN ANCHORAGE ALPHA,Tanker
+470601000,2026-10-24T02:25:00Z,55.6200,25.9800,0.2,0,SYN ANCHORAGE ALPHA,Tanker
+470602000,2026-10-24T02:05:00Z,55.6282,25.9800,0.2,0,SYN ANCHORAGE BRAVO,Cargo
+470602000,2026-10-24T02:25:00Z,55.6282,25.9800,0.2,0,SYN ANCHORAGE BRAVO,Cargo
+470401000,2026-10-18T14:12:00Z,55.1001,26.0200,0.1,200,SYN ANCHORED TANKER,Tanker
+470401000,2026-10-18T14:32:00Z,55.0999,26.0201,0.1,200,SYN ANCHORED TANKER,Tanker
+470401000,2026-10-24T02:05:00Z,55.1001,26.0200,0.1,200,SYN ANCHORED TANKER,Tanker
+470401000,2026-10-24T02:25:00Z,55.0999,26.0201,0.1,200,SYN ANCHORED TANKER,Tanker
+470401000,2026-10-30T14:10:00Z,55.1001,26.0200,0.1,200,SYN ANCHORED TANKER,Tanker
+470401000,2026-10-30T14:35:00Z,55.0999,26.0201,0.1,200,SYN ANCHORED TANKER,Tanker
+470501000,2026-10-24T02:05:00Z,55.2400,25.7200,8.0,40,SYN GHOST CARRIER,Cargo
+470501000,2026-10-24T02:25:00Z,56.1000,26.3000,8.0,40,SYN GHOST CARRIER,Cargo
+470701000,2026-10-24T00:30:00Z,55.0500,25.9500,9.0,60,SYN GAP RUNNER,Cargo
+470701000,2026-10-24T03:45:00Z,55.5500,26.2000,9.0,60,SYN GAP RUNNER,Cargo`;
+
+    /***************************************************************************
+     * 2. CSV PARSER & GEOSPATIAL MATH ENGINE (HAVERSINE, CONFIDENCE, KINEMATICS)
+     ***************************************************************************/
+
+    /**
+     * Parses a standard CSV string into an array of objects using the header row.
+     */
+    function parseCsvString(csvText) {
+      const lines = csvText.trim().split(/\r?\n/).filter(l => l.trim().length > 0);
+      if (lines.length < 2) return [];
+      const headers = lines[0].split(',').map(h => h.trim());
+      const rows = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',').map(c => c.trim());
+        if (cols.length < headers.length) continue;
+        const obj = {};
+        headers.forEach((h, idx) => {
+          obj[h] = cols[idx];
+        });
+        rows.push(obj);
+      }
+      return rows;
+    }
+
+    /**
+     * Computes exact spherical Haversine distance in meters between two WGS84 coordinates.
+     */
+    function haversineMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371008.8; // Mean Earth radius in meters
+      const toRad = Math.PI / 180;
+      const dLat = (lat2 - lat1) * toRad;
+      const dLon = (lon2 - lon1) * toRad;
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    /**
+     * Computes vessel length estimate (m) and deterministic SAR confidence score [0.05..0.99]
+     * from Sentinel-1 IW VV peak backscatter (vv_db) and connected pixel area (area_m2).
+     */
+    function computeSarSignatureMetrics(vv_db, area_m2) {
+      const rawLength = Math.sqrt(Math.max(area_m2, 25) * 4.2);
+      const estLengthM = Math.round(Math.min(Math.max(rawLength, 14), 400));
+
+      const dbNorm = Math.min(Math.max((vv_db - (-12)) / (6 - (-12)), 0), 1);
+      const areaNorm = Math.min(Math.max((Math.log10(Math.max(area_m2, 100)) - 2.4) / (4.4 - 2.4), 0), 1);
+
+      const confidence = Number(Math.min(Math.max(0.65 * dbNorm + 0.35 * areaNorm, 0.12), 0.99).toFixed(2));
+      return { estLengthM, confidence };
+    }
+
+    /**
+     * Interpolates AIS tracks to the exact SAR scene acquisition timestamp (tSarMs).
+     */
+    function interpolateAisToSarTime(aisRows, sceneTimeIso) {
+      const tSarMs = Date.parse(sceneTimeIso);
+      const byMmsi = new Map();
+
+      aisRows.forEach(r => {
+        const tMs = Date.parse(r.time_utc);
+        if (isNaN(tMs)) return;
+        if (Math.abs(tMs - tSarMs) > 6 * 3600 * 1000) return;
+
+        const mmsi = String(r.mmsi);
+        if (!byMmsi.has(mmsi)) byMmsi.set(mmsi, []);
+        byMmsi.get(mmsi).push({
+          mmsi,
+          time_utc: r.time_utc,
+          tMs,
+          lon: parseFloat(r.lon),
+          lat: parseFloat(r.lat),
+          sog: parseFloat(r.sog || 0),
+          cog: parseFloat(r.cog || 0),
+          name: r.name || `VESSEL-${mmsi}`,
+          ship_type: r.ship_type || "Unspecified"
+        });
+      });
+
+      const interpolatedTracks = [];
+
+      byMmsi.forEach((pings, mmsi) => {
+        pings.sort((a, b) => a.tMs - b.tMs);
+
+        let p1 = null;
+        let p2 = null;
+        for (let i = 0; i < pings.length; i++) {
+          if (pings[i].tMs <= tSarMs) p1 = pings[i];
+          if (pings[i].tMs >= tSarMs && !p2) p2 = pings[i];
+        }
+
+        let interpLat, interpLon, minDeltaSec, mode;
+
+        if (p1 && p2 && p1.tMs !== p2.tMs) {
+          const alpha = (tSarMs - p1.tMs) / (p2.tMs - p1.tMs);
+          interpLat = p1.lat + alpha * (p2.lat - p1.lat);
+          interpLon = p1.lon + alpha * (p2.lon - p1.lon);
+          minDeltaSec = Math.min(Math.abs(tSarMs - p1.tMs), Math.abs(p2.tMs - tSarMs)) / 1000;
+          mode = "LINEAR_BRACKET";
+        } else {
+          const nearest = p1 || p2 || pings[0];
+          const dtSec = (tSarMs - nearest.tMs) / 1000;
+          if (Math.abs(dtSec) > 45 * 60) return;
+
+          const speedMps = nearest.sog * 0.514444;
+          const distM = speedMps * dtSec;
+          const cogRad = (nearest.cog * Math.PI) / 180;
+          const dLat = (distM * Math.cos(cogRad)) / 111320;
+          const dLon = (distM * Math.sin(cogRad)) / (111320 * Math.cos((nearest.lat * Math.PI) / 180));
+
+          interpLat = nearest.lat + dLat;
+          interpLon = nearest.lon + dLon;
+          minDeltaSec = Math.abs(dtSec);
+          mode = "DEAD_RECKONED";
+        }
+
+        const ref = p1 || p2 || pings[0];
+        interpolatedTracks.push({
+          mmsi,
+          sceneTimeIso,
+          name: ref.name,
+          ship_type: ref.ship_type,
+          sog: ref.sog,
+          cog: ref.cog,
+          interpLat: Number(interpLat.toFixed(5)),
+          interpLon: Number(interpLon.toFixed(5)),
+          minDeltaMin: Number((minDeltaSec / 60).toFixed(1)),
+          mode,
+          rawPings: pings
+        });
+      });
+
+      return interpolatedTracks;
+    }
+
+    /**
+     * Core Pipeline Execution for a single scene pass timestamp.
+     */
+    function runSingleScenePipeline(sarRows, aisRows, sceneTimeIso, params) {
+      const { matchBufferMeters, minConfidence, platformBufferMeters } = params;
+
+      const sceneSarRaw = sarRows
+        .filter(r => r.time_utc === sceneTimeIso)
+        .map((r, idx) => {
+          const lon = parseFloat(r.lon);
+          const lat = parseFloat(r.lat);
+          const vv_db = parseFloat(r.vv_db);
+          const area_m2 = parseFloat(r.area_m2);
+          const { estLengthM, confidence } = computeSarSignatureMetrics(vv_db, area_m2);
+
+          let nearestPlat = null;
+          let minPlatDistM = Infinity;
+          KNOWN_OFFSHORE_PLATFORMS.forEach(p => {
+            const d = haversineMeters(lat, lon, p.lat, p.lon);
+            if (d < minPlatDistM) {
+              minPlatDistM = d;
+              nearestPlat = p;
+            }
+          });
+
+          return {
+            det_id: r.det_id || `S1-DET-${idx + 1}`,
+            lon,
+            lat,
+            time_utc: r.time_utc,
+            vv_db,
+            area_m2,
+            estLengthM,
+            confidence,
+            nearestPlatform: nearestPlat,
+            nearestPlatformDistM: Math.round(minPlatDistM)
+          };
+        });
+
+      const lowConfRejected = [];
+      const confidentDetections = [];
+      sceneSarRaw.forEach(d => {
+        if (d.confidence < minConfidence) {
+          lowConfRejected.push({ ...d, status: "LOW_CONFIDENCE" });
+        } else {
+          confidentDetections.push(d);
+        }
+      });
+
+      const platformRejections = [];
+      const candidateVesselDetections = [];
+      confidentDetections.forEach(d => {
+        if (d.nearestPlatformDistM <= platformBufferMeters) {
+          platformRejections.push({ ...d, status: "PLATFORM_MASKED" });
+        } else {
+          candidateVesselDetections.push(d);
+        }
+      });
+
+      const aisInterpolated = interpolateAisToSarTime(aisRows, sceneTimeIso);
+
+      candidateVesselDetections.forEach(d => {
+        let bestAis = null;
+        let bestDist = Infinity;
+        aisInterpolated.forEach(ais => {
+          const dist = haversineMeters(d.lat, d.lon, ais.interpLat, ais.interpLon);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestAis = ais;
+          }
+        });
+        d.nearestAis = bestAis;
+        d.nearestAisDistM = bestAis ? Math.round(bestDist) : null;
+      });
+
+      const candidatePairs = [];
+      candidateVesselDetections.forEach(d => {
+        aisInterpolated.forEach(ais => {
+          const distM = haversineMeters(d.lat, d.lon, ais.interpLat, ais.interpLon);
+          if (distM <= matchBufferMeters) {
+            candidatePairs.push({ det: d, ais, distM });
+          }
+        });
+      });
+
+      candidatePairs.sort((a, b) => a.distM - b.distM);
+
+      const matchedDetIds = new Set();
+      const matchedMmsis = new Set();
+      const matchedVessels = [];
+
+      candidatePairs.forEach(pair => {
+        if (!matchedDetIds.has(pair.det.det_id) && !matchedMmsis.has(pair.ais.mmsi)) {
+          matchedDetIds.add(pair.det.det_id);
+          matchedMmsis.add(pair.ais.mmsi);
+          matchedVessels.push({
+            ...pair.det,
+            status: "AIS_MATCHED",
+            matchedAis: pair.ais,
+            matchDistM: Math.round(pair.distM)
+          });
+        }
+      });
+
+      const darkVessels = candidateVesselDetections
+        .filter(d => !matchedDetIds.has(d.det_id))
+        .map(d => ({
+          ...d,
+          status: "DARK_VESSEL"
+        }))
+        .sort((a, b) => b.confidence - a.confidence || b.vv_db - a.vv_db);
+
+      return {
+        sceneTimeIso,
+        totalValidSar: confidentDetections.length,
+        lowConfCount: lowConfRejected.length,
+        platformRejections,
+        matchedVessels,
+        darkVessels,
+        aisInterpolated,
+        allSceneDetections: [...darkVessels, ...matchedVessels, ...platformRejections]
+      };
+    }
+
+    /**
+     * Supports single scene pass OR "ALL_SCENES" aggregate mode across all satellite passes.
+     */
+    function runSarAisFusionPipeline(sarRows, aisRows, sceneSelection, allSceneTimestamps, params) {
+      if (sceneSelection !== "ALL_SCENES") {
+        return runSingleScenePipeline(sarRows, aisRows, sceneSelection, params);
+      }
+
+      // Aggregate across all scenes
+      let totalValidSar = 0;
+      let lowConfCount = 0;
+      const platformRejections = [];
+      const matchedVessels = [];
+      const darkVessels = [];
+      const aisInterpolated = [];
+
+      allSceneTimestamps.forEach(ts => {
+        const sub = runSingleScenePipeline(sarRows, aisRows, ts, params);
+        totalValidSar += sub.totalValidSar;
+        lowConfCount += sub.lowConfCount;
+        platformRejections.push(...sub.platformRejections);
+        matchedVessels.push(...sub.matchedVessels);
+        darkVessels.push(...sub.darkVessels);
+        aisInterpolated.push(...sub.aisInterpolated);
+      });
+
+      darkVessels.sort((a, b) => b.confidence - a.confidence || b.vv_db - a.vv_db);
+
+      return {
+        sceneTimeIso: "ALL_SCENES",
+        totalValidSar,
+        lowConfCount,
+        platformRejections,
+        matchedVessels,
+        darkVessels,
+        aisInterpolated,
+        allSceneDetections: [...darkVessels, ...matchedVessels, ...platformRejections]
+      };
+    }
+
+    /***************************************************************************
+     * 3. APPLICATION STATE & KEYLESS 3-WAY BASEMAP INITIALIZATION
+     ***************************************************************************/
+
+    const appState = {
+      isSynthetic: true,
+      sarData: [],
+      aisData: [],
+      sceneDates: [], // Individual timestamps + "ALL_SCENES"
+      rawSceneTimestamps: [],
+      activeSceneIndex: 0,
+      matchBufferMeters: 500,
+      minConfidence: 0.55,
+      platformBufferMeters: 1000,
+      selectedDetId: null,
+      basemapMode: "OSM_DARK", // "VECTOR_ONLY" | "OSM_DARK" | "ESRI_SAT"
+      lastPipelineResult: null
+    };
+
+    let map;
+    let osmTileLayer;
+    let esriSatTileLayer;
+    let offlineVectorGroup;
+    let layerGroups = {};
+
+    function initMap() {
+      map = L.map('map', {
+        center: [25.78, 55.75],
+        zoom: 8,
+        minZoom: 6,
+        maxZoom: 15,
+        zoomControl: true,
+        attributionControl: true
+      });
+      // Fit the AOI once layout has settled so the map fills its panel
+      const fitAoi = () => { map.invalidateSize(); map.fitBounds([[AOI_BOUNDS.minLat, AOI_BOUNDS.minLon],[AOI_BOUNDS.maxLat, AOI_BOUNDS.maxLon]], {padding:[10,10]}); };
+      fitAoi(); setTimeout(fitAoi, 300);
+
+      // 1. Keyless OpenStreetMap Standard Tile Layer (styled via #map.osm-dark-filter .leaflet-tile-pane)
+      osmTileLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        maxNativeZoom: 16,
+        attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, OpenStreetMap contributors | Team Maya SAR-AIS Engine',
+        maxZoom: 18,
+        opacity: 0.90
+      }).addTo(map);
+
+      // 2. Keyless Esri World Imagery Satellite Layer
+      // Auto-fallback: if no tile ever loads (offline / blocked), switch to the built-in vector chart
+      let tilesLoaded = 0, tilesFailed = 0;
+      const tileFallback = () => { if (!tilesLoaded && appState.basemapMode !== 'VECTOR_ONLY') setBasemapMode('VECTOR_ONLY'); };
+      osmTileLayer.on('tileload', () => { tilesLoaded++; });
+      osmTileLayer.on('tileerror', () => { if (++tilesFailed >= 4) tileFallback(); });
+      setTimeout(tileFallback, 7000);
+
+      esriSatTileLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri | Team Maya SAR-AIS Engine',
+        maxZoom: 18,
+        opacity: 0.92
+      });
+
+      // 3. Always-On Crisp Vector Chart Overlay (Coastlines, Islands, Port Labels & Graticules)
+      offlineVectorGroup = L.layerGroup().addTo(map);
+      renderOfflineVectorBasemap();
+
+      // Operational Layer Groups
+      layerGroups = {
+        aoi: L.layerGroup().addTo(map),
+        platforms: L.layerGroup().addTo(map),
+        aisTracks: L.layerGroup().addTo(map),
+        allSar: L.layerGroup().addTo(map),
+        matched: L.layerGroup().addTo(map),
+        dark: L.layerGroup().addTo(map)
+      };
+
+      // Mouse coordinate telemetry
+      map.on('mousemove', (e) => {
+        const lat = e.latlng.lat.toFixed(4);
+        const lon = e.latlng.lng.toFixed(4);
+        document.getElementById('mouseCoordBox').textContent = `LON: ${lon}° E | LAT: ${lat}° N`;
+      });
+    }
+
+    /**
+     * Switches between the 3 keyless basemap modes:
+     *  - "VECTOR_ONLY": Pure Offline Vector Chart (zero external tile requests)
+     *  - "OSM_DARK": Keyless OpenStreetMap with Dark Radar Navy CSS Filter + Vector Chart
+     *  - "ESRI_SAT": Keyless Esri World Imagery Satellite + Vector Chart
+     */
+    function setBasemapMode(mode) {
+      appState.basemapMode = mode;
+      const mapEl = document.getElementById('map');
+      const btnVector = document.getElementById('btnBaseVector');
+      const btnOsm = document.getElementById('btnBaseOsmDark');
+      const btnEsri = document.getElementById('btnBaseEsriSat');
+
+      // Reset classes
+      mapEl.classList.remove('osm-dark-filter', 'esri-sat-filter');
+      if (map.hasLayer(osmTileLayer)) map.removeLayer(osmTileLayer);
+      if (map.hasLayer(esriSatTileLayer)) map.removeLayer(esriSatTileLayer);
+
+      const inactiveClass = "px-2.5 py-1 rounded text-[11px] font-mono-tech font-bold text-slate-300 hover:text-white transition";
+      const activeClass = "px-2.5 py-1 rounded text-[11px] font-mono-tech font-bold bg-[#4f8cff] text-white transition";
+
+      btnVector.className = inactiveClass;
+      btnOsm.className = inactiveClass;
+      btnEsri.className = inactiveClass;
+
+      if (mode === "VECTOR_ONLY") {
+        btnVector.className = activeClass;
+      } else if (mode === "OSM_DARK") {
+        mapEl.classList.add('osm-dark-filter');
+        osmTileLayer.addTo(map);
+        btnOsm.className = activeClass;
+      } else if (mode === "ESRI_SAT") {
+        mapEl.classList.add('esri-sat-filter');
+        esriSatTileLayer.addTo(map);
+        btnEsri.className = activeClass;
+      }
+
+      renderOfflineVectorBasemap();
+    }
+
+    /**
+     * Renders the built-in vector coastline, island polygons, and coordinate graticule.
+     */
+    function renderOfflineVectorBasemap() {
+      offlineVectorGroup.clearLayers();
+
+      const isVectorOnly = appState.basemapMode === "VECTOR_ONLY";
+
+      // Lat/Lon Graticule Grid Lines
+      for (let lon = 54.5; lon <= 57.0; lon += 0.5) {
+        L.polyline([[24.5, lon], [27.2, lon]], {
+          color: '#1e293b',
+          weight: 1,
+          dashArray: '3,6',
+          interactive: false
+        }).addTo(offlineVectorGroup);
+      }
+      for (let lat = 24.5; lat <= 27.0; lat += 0.5) {
+        L.polyline([[lat, 54.5], [lat, 57.0]], {
+          color: '#1e293b',
+          weight: 1,
+          dashArray: '3,6',
+          interactive: false
+        }).addTo(offlineVectorGroup);
+      }
+
+      // Stylized Landmass Polygons (high fill opacity in Offline Vector mode, crisp coastline stroke in Tile modes)
+      OFFLINE_COASTLINE_POLYGONS.forEach(poly => {
+        if (!isVectorOnly) return; // hand-drawn coast only in offline mode; real tiles show the true coast
+        L.polygon(poly.coords, {
+          color: isVectorOnly ? '#38bdf8' : '#475569',
+          weight: isVectorOnly ? 1.8 : 1.2,
+          fillColor: '#0f172a',
+          fillOpacity: isVectorOnly ? 0.90 : 0.18,
+          interactive: false
+        }).addTo(offlineVectorGroup);
+      });
+
+      // Key Port & Chokepoint Reference Labels
+      const landmarks = [
+        { name: "JEBEL ALI PORT", coords: [25.01, 55.06] },
+        { name: "DUBAI", coords: [25.24, 55.28] },
+        { name: "SHARJAH", coords: [25.36, 55.38] },
+        { name: "RAS AL KHAIMAH", coords: [25.79, 55.94] },
+        { name: "STRAIT OF HORMUZ", coords: [26.42, 56.38] },
+        { name: "QESHM ISLAND", coords: [26.72, 55.85] },
+        { name: "FUJAIRAH / KHOR FAKKAN", coords: [25.35, 56.36] }
+      ];
+
+      landmarks.forEach(lm => {
+        L.marker(lm.coords, {
+          interactive: false,
+          icon: L.divIcon({
+            className: '',
+            html: `<div class="font-mono-tech text-[9px] text-cyan-200/80 whitespace-nowrap tracking-widest pointer-events-none drop-shadow">${lm.name}</div>`,
+            iconSize: [110, 14],
+            iconAnchor: [0, 0]
+          })
+        }).addTo(offlineVectorGroup);
+      });
+    }
+
+    /***************************************************************************
+     * 4. MAP LAYER RENDERING & UI SYNCHRONIZATION
+     ***************************************************************************/
+
+    function updateDashboard() {
+      if (!appState.sceneDates.length) return;
+      const sceneSelection = appState.sceneDates[appState.activeSceneIndex];
+
+      // Run core SAR-AIS fusion pipeline
+      const result = runSarAisFusionPipeline(
+        appState.sarData,
+        appState.aisData,
+        sceneSelection,
+        appState.rawSceneTimestamps,
+        {
+          matchBufferMeters: appState.matchBufferMeters,
+          minConfidence: appState.minConfidence,
+          platformBufferMeters: appState.platformBufferMeters
+        }
+      );
+      appState.lastPipelineResult = result;
+
+      // Update KPI Cards
+      const nonPlatformValidCount = result.matchedVessels.length + result.darkVessels.length;
+      const darkPct = nonPlatformValidCount > 0
+        ? ((result.darkVessels.length / nonPlatformValidCount) * 100).toFixed(1)
+        : "0.0";
+
+      document.getElementById('kpiTotalSar').textContent = result.totalValidSar;
+      document.getElementById('kpiLowConfFiltered').textContent = `${result.lowConfCount} low-SNR`;
+      document.getElementById('kpiPlatformCount').textContent = result.platformRejections.length;
+      document.getElementById('kpiMatchedCount').textContent = result.matchedVessels.length;
+      document.getElementById('kpiDarkCount').textContent = result.darkVessels.length;
+      document.getElementById('kpiDarkPercent').textContent = `${darkPct}%`;
+
+      document.getElementById('sceneIndexBadge').textContent =
+        sceneSelection === "ALL_SCENES"
+          ? `ALL (${appState.rawSceneTimestamps.length} Passes)`
+          : `Pass ${appState.activeSceneIndex + 1} / ${appState.rawSceneTimestamps.length}`;
+
+      // Render Map Layers & Sidebar Lists
+      renderMapLayers(result);
+      renderSidebars(result);
+
+      // Refresh open inspector card if selected detection is still in scene
+      if (appState.selectedDetId) {
+        const found = result.allSceneDetections.find(d => d.det_id === appState.selectedDetId);
+        if (found) {
+          openInspectorCard(found, false);
+        } else {
+          closeInspectorCard();
+        }
+      }
+    }
+
+    function renderMapLayers(result) {
+      Object.values(layerGroups).forEach(lg => lg.clearLayers());
+
+      // 1. AOI Bounding Box & TSS Shipping Lanes
+      if (document.getElementById('chkLayerAoi').checked) {
+        const boundsRect = [
+          [AOI_BOUNDS.minLat, AOI_BOUNDS.minLon],
+          [AOI_BOUNDS.maxLat, AOI_BOUNDS.maxLon]
+        ];
+        L.rectangle(boundsRect, {
+          color: '#a855f7',
+          weight: 1.5,
+          dashArray: '6,6',
+          fill: false,
+          interactive: false
+        }).addTo(layerGroups.aoi);
+
+        SHIPPING_LANES.forEach(lane => {
+          L.polyline(lane.coords, {
+            color: '#6366f1',
+            weight: 2,
+            opacity: 0.45,
+            dashArray: '4,8',
+            interactive: false
+          }).addTo(layerGroups.aoi);
+        });
+      }
+
+      // 2. Fixed Offshore Platforms & Exclusion Radius Rings
+      if (document.getElementById('chkLayerPlatforms').checked) {
+        KNOWN_OFFSHORE_PLATFORMS.forEach(plat => {
+          L.circle([plat.lat, plat.lon], {
+            radius: appState.platformBufferMeters,
+            color: '#ffb800',
+            weight: 1.5,
+            dashArray: '4,4',
+            fillColor: '#ffb800',
+            fillOpacity: 0.12
+          })
+            .bindTooltip(
+              `<strong>${plat.name}</strong><br/>Exclusion Radius: ${appState.platformBufferMeters} m`,
+              { className: 'maya-tooltip' }
+            )
+            .addTo(layerGroups.platforms);
+
+          L.marker([plat.lat, plat.lon], {
+            icon: L.divIcon({
+              className: '',
+              html: `<div class="platform-marker-icon"></div>`,
+              iconSize: [14, 14],
+              iconAnchor: [7, 7]
+            })
+          })
+            .bindTooltip(
+              `<strong>[RIG] ${plat.name}</strong><br/>Lon: ${plat.lon.toFixed(4)}° | Lat: ${plat.lat.toFixed(4)}°`,
+              { className: 'maya-tooltip' }
+            )
+            .addTo(layerGroups.platforms);
+        });
+      }
+
+      // 3. AIS Kinematic Tracks & Interpolated Position at t_SAR
+      if (document.getElementById('chkLayerAisTracks').checked) {
+        result.aisInterpolated.forEach(track => {
+          const latlngs = track.rawPings.map(p => [p.lat, p.lon]);
+          if (latlngs.length >= 2) {
+            L.polyline(latlngs, {
+              color: '#00f2fe',
+              weight: 1.5,
+              opacity: 0.45,
+              dashArray: '3,5'
+            }).addTo(layerGroups.aisTracks);
+          }
+
+          track.rawPings.forEach(p => {
+            L.circleMarker([p.lat, p.lon], {
+              radius: 2.5,
+              color: '#00f2fe',
+              fillColor: '#00f2fe',
+              fillOpacity: 0.6,
+              weight: 1
+            })
+              .bindTooltip(
+                `AIS Raw Ping: ${track.name}<br/>Time: ${p.time_utc}<br/>SOG: ${p.sog} kn | COG: ${p.cog}°`,
+                { className: 'maya-tooltip' }
+              )
+              .addTo(layerGroups.aisTracks);
+          });
+
+          L.circleMarker([track.interpLat, track.interpLon], {
+            radius: 4,
+            color: '#00f2fe',
+            weight: 1.5,
+            fillOpacity: 0
+          })
+            .bindTooltip(
+              `<strong>AIS @ t<sub>SAR</sub>: ${track.name}</strong><br/>MMSI: ${track.mmsi} (${track.ship_type})<br/>Δt: ${track.minDeltaMin} min`,
+              { className: 'maya-tooltip' }
+            )
+            .addTo(layerGroups.aisTracks);
+        });
+      }
+
+      // 4. All Raw SAR Centroids (Subtle Radar Crosshair Ring)
+      if (document.getElementById('chkLayerAllSar').checked) {
+        result.allSceneDetections.forEach(det => {
+          L.circleMarker([det.lat, det.lon], {
+            radius: 9,
+            color: det.status === 'PLATFORM_MASKED' ? '#ffb800' : '#94a3b8',
+            weight: 1,
+            fillOpacity: 0.05
+          })
+            .on('click', () => openInspectorCard(det, true))
+            .addTo(layerGroups.allSar);
+        });
+      }
+
+      // 5. Matched Vessels & SAR-to-AIS Association Vector
+      if (document.getElementById('chkLayerMatched').checked) {
+        result.matchedVessels.forEach(m => {
+          L.polyline(
+            [
+              [m.lat, m.lon],
+              [m.matchedAis.interpLat, m.matchedAis.interpLon]
+            ],
+            {
+              color: '#00f2fe',
+              weight: 2,
+              opacity: 0.85
+            }
+          ).addTo(layerGroups.matched);
+
+          L.marker([m.lat, m.lon], {
+            icon: L.divIcon({
+              className: '',
+              html: `<div class="matched-vessel-icon"></div>`,
+              iconSize: [12, 12],
+              iconAnchor: [6, 6]
+            })
+          })
+            .bindTooltip(
+              `<strong>[MATCHED] ${m.matchedAis.name}</strong><br/>SAR ID: ${m.det_id} | Offset: ${m.matchDistM} m<br/>Est. Length: ${m.estLengthM} m | VV: ${m.vv_db} dB`,
+              { className: 'maya-tooltip' }
+            )
+            .on('click', () => openInspectorCard(m, true))
+            .addTo(layerGroups.matched);
+        });
+      }
+
+      // 6. Dark Vessels (Pulsing High-Contrast Pink Alert Markers)
+      if (document.getElementById('chkLayerDark').checked) {
+        result.darkVessels.forEach(dark => {
+          L.marker([dark.lat, dark.lon], {
+            icon: L.divIcon({
+              className: '',
+              html: `<div class="dark-vessel-pulse"></div>`,
+              iconSize: [16, 16],
+              iconAnchor: [8, 8]
+            })
+          })
+            .bindTooltip(
+              `<strong>[DARK VESSEL] ${dark.det_id}</strong><br/>Conf: ${Math.round(dark.confidence * 100)}% | Est. Length: ${dark.estLengthM} m<br/>VV: ${dark.vv_db} dB | Nearest AIS: ${dark.nearestAisDistM ? dark.nearestAisDistM + ' m' : 'N/A'}`,
+              { className: 'maya-tooltip' }
+            )
+            .on('click', () => openInspectorCard(dark, true))
+            .addTo(layerGroups.dark);
+        });
+      }
+    }
+
+    /**
+     * Populates the right-hand Dark Vessel Alert Feed and Matched Vessel compact list.
+     */
+    function renderSidebars(result) {
+      const darkContainer = document.getElementById('darkAlertList');
+      const alertBadge = document.getElementById('alertFeedCountBadge');
+      alertBadge.textContent = `${result.darkVessels.length} ALERTS`;
+
+      darkContainer.innerHTML = '';
+
+      if (result.darkVessels.length === 0) {
+        darkContainer.innerHTML = `
+          <div class="p-4 rounded-xl bg-[#131936] border border-slate-700 text-center text-xs text-slate-400 font-mono-tech">
+            No unmatched dark vessels under current buffer/confidence thresholds.
+          </div>
+        `;
+      } else {
+        result.darkVessels.forEach(d => {
+          const isSelected = appState.selectedDetId === d.det_id;
+          const card = document.createElement('div');
+          card.className = `p-3 rounded-xl border transition cursor-pointer ${
+            isSelected
+              ? 'bg-[#2e1214] border-[#ff4d4f] shadow-lg shadow-red-500/10'
+              : 'bg-[#131936]/90 border-slate-700/80 hover:border-red-500/60'
+          }`;
+
+          const nearestAisLabel = d.nearestAis
+            ? `${d.nearestAis.name} (${(d.nearestAisDistM / 1000).toFixed(1)} km)`
+            : 'None in window';
+
+          card.innerHTML = `
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-[#ff4d4f]"></span>
+                <span class="font-mono-tech text-xs font-bold text-white">${d.det_id}</span>
+              </div>
+              <span class="font-mono-tech text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/40">
+                CONF ${Math.round(d.confidence * 100)}%
+              </span>
+            </div>
+            <div class="grid grid-cols-3 gap-1 mt-2 pt-2 border-t border-slate-800/80 font-mono-tech text-[10px]">
+              <div>
+                <span class="text-slate-400 block">COORDS</span>
+                <span class="text-slate-200">${d.lat.toFixed(3)}°N, ${d.lon.toFixed(3)}°E</span>
+              </div>
+              <div>
+                <span class="text-slate-400 block">EST. LEN</span>
+                <span class="text-red-300 font-bold">~${d.estLengthM} m</span>
+              </div>
+              <div>
+                <span class="text-slate-400 block">VV BACKSCATTER</span>
+                <span class="text-cyan-300">${d.vv_db > 0 ? '+' : ''}${d.vv_db} dB</span>
+              </div>
+            </div>
+            <div class="mt-2 font-mono-tech text-[10px] text-slate-400 flex justify-between">
+              <span>Nearest AIS:</span>
+              <span class="text-slate-300 truncate max-w-[180px]">${nearestAisLabel}</span>
+            </div>
+          `;
+
+          card.addEventListener('click', () => openInspectorCard(d, true));
+          darkContainer.appendChild(card);
+        });
+      }
+
+      const matchedContainer = document.getElementById('matchedCompactList');
+      document.getElementById('matchedListCountBadge').textContent = `${result.matchedVessels.length} matched`;
+      matchedContainer.innerHTML = '';
+
+      result.matchedVessels.forEach(m => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center justify-between px-2 py-1 rounded bg-[#131936] hover:bg-[#1b244a] text-[11px] font-mono-tech cursor-pointer transition';
+        row.innerHTML = `
+          <span class="text-cyan-300 truncate max-w-[190px]">${m.matchedAis.name}</span>
+          <span class="text-slate-400">${m.matchDistM} m</span>
+        `;
+        row.addEventListener('click', () => openInspectorCard(m, true));
+        matchedContainer.appendChild(row);
+      });
+    }
+
+    /**
+     * Opens the floating Detail Inspector Card on the map and slews the map camera.
+     */
+    function openInspectorCard(det, shouldPanZoom = true) {
+      appState.selectedDetId = det.det_id;
+      const card = document.getElementById('inspectorCard');
+      card.classList.remove('hidden');
+
+      const badge = document.getElementById('inspStatusBadge');
+      if (det.status === 'DARK_VESSEL') {
+        badge.textContent = 'DARK VESSEL ALERT';
+        badge.className = 'px-2 py-0.5 rounded text-[10px] font-mono-tech font-bold uppercase bg-[#ff4d4f] text-white';
+      } else if (det.status === 'AIS_MATCHED') {
+        badge.textContent = 'AIS VERIFIED MATCH';
+        badge.className = 'px-2 py-0.5 rounded text-[10px] font-mono-tech font-bold uppercase bg-cyan-400 text-slate-950';
+      } else {
+        badge.textContent = 'STATIC PLATFORM MASKED';
+        badge.className = 'px-2 py-0.5 rounded text-[10px] font-mono-tech font-bold uppercase bg-amber-400 text-slate-950';
+      }
+
+      document.getElementById('inspDetId').textContent = det.det_id;
+      document.getElementById('inspTimestamp').textContent = `S1 IW VV Pass: ${det.time_utc}`;
+      document.getElementById('inspCoords').textContent = `${det.lat.toFixed(4)}°N, ${det.lon.toFixed(4)}°E`;
+      document.getElementById('inspLength').textContent = `~${det.estLengthM} m (${det.area_m2} m²)`;
+      document.getElementById('inspBackscatter').textContent = `${det.vv_db > 0 ? '+' : ''}${det.vv_db} dB (${Math.round(det.confidence * 100)}%)`;
+
+      if (det.status === 'AIS_MATCHED' && det.matchedAis) {
+        document.getElementById('inspNearestAisName').textContent =
+          `${det.matchedAis.name} (${det.matchedAis.mmsi})`;
+        document.getElementById('inspNearestAisDist').textContent =
+          `${det.matchDistM} m (Matched within ${appState.matchBufferMeters} m)`;
+        document.getElementById('inspNearestAisDt').textContent =
+          `±${det.matchedAis.minDeltaMin} min (${det.matchedAis.mode})`;
+      } else if (det.nearestAis) {
+        document.getElementById('inspNearestAisName').textContent =
+          `${det.nearestAis.name} (${det.nearestAis.mmsi})`;
+        document.getElementById('inspNearestAisDist').textContent =
+          `${det.nearestAisDistM.toLocaleString()} m (Exceeds ${appState.matchBufferMeters} m buffer)`;
+        document.getElementById('inspNearestAisDt').textContent =
+          `±${det.nearestAis.minDeltaMin} min (${det.nearestAis.mode})`;
+      } else {
+        document.getElementById('inspNearestAisName').textContent = 'No AIS vessel in scene window';
+        document.getElementById('inspNearestAisDist').textContent = 'N/A';
+        document.getElementById('inspNearestAisDt').textContent = 'N/A';
+      }
+
+      if (det.nearestPlatform) {
+        const km = (det.nearestPlatformDistM / 1000).toFixed(2);
+        document.getElementById('inspNearestPlatform').textContent =
+          `${det.nearestPlatform.name} (${km} km)`;
+      }
+
+      if (shouldPanZoom && map) {
+        map.flyTo([det.lat, det.lon], Math.max(map.getZoom(), 10), {
+          duration: 0.75
+        });
+      }
+
+      if (appState.lastPipelineResult) {
+        renderSidebars(appState.lastPipelineResult);
+      }
+    }
+
+    function closeInspectorCard() {
+      appState.selectedDetId = null;
+      document.getElementById('inspectorCard').classList.add('hidden');
+      if (appState.lastPipelineResult) {
+        renderSidebars(appState.lastPipelineResult);
+      }
+    }
+
+    /***************************************************************************
+     * 5. DATA LOADING, EXPORT (CSV / GEOJSON) & EVENT LISTENERS
+     ***************************************************************************/
+
+    function loadDatasetIntoApp(sarCsvStr, aisCsvStr, isSyntheticFlag = true) {
+      const sarRows = parseCsvString(sarCsvStr);
+      const aisRows = parseCsvString(aisCsvStr);
+
+      if (sarRows.length === 0) {
+        return { ok: false, msg: "SAR CSV contains no valid rows." };
+      }
+
+      appState.sarData = sarRows;
+      appState.aisData = aisRows;
+      appState.isSynthetic = isSyntheticFlag;
+
+      const uniqueScenes = Array.from(new Set(sarRows.map(r => r.time_utc))).sort();
+      appState.rawSceneTimestamps = uniqueScenes;
+      appState.sceneDates = [...uniqueScenes, "ALL_SCENES"];
+      appState.activeSceneIndex = 0;
+
+      const selectEl = document.getElementById('sceneSelect');
+      selectEl.innerHTML = '';
+      appState.sceneDates.forEach((ts, idx) => {
+        const opt = document.createElement('option');
+        opt.value = idx;
+        opt.textContent = ts === "ALL_SCENES"
+          ? `ALL SCENES (${uniqueScenes.length} Passes Aggregate)`
+          : ts.replace('T', ' ').replace('Z', ' UTC');
+        selectEl.appendChild(opt);
+      });
+
+      const sceneSlider = document.getElementById('sceneSlider');
+      sceneSlider.max = Math.max(appState.sceneDates.length - 1, 0);
+      sceneSlider.value = 0;
+
+      const badgeEl = document.getElementById('dataSourceBadgeText');
+      if (isSyntheticFlag) {
+        badgeEl.textContent = "SYNTHETIC DEMO DATA — NOT REAL INCIDENTS";
+      } else {
+        badgeEl.textContent = `TEAM MAYA // CUSTOM CSV (${sarRows.length} SAR / ${aisRows.length} AIS PINGS)`;
+      }
+
+      closeInspectorCard();
+      updateDashboard();
+      return { ok: true, msg: `Loaded ${sarRows.length} SAR detections across ${uniqueScenes.length} scene(s).` };
+    }
+
+    /**
+     * Triggers a browser file download of Team Maya's active Dark Vessels in CSV format.
+     */
+    function exportDarkVesselsCsv() {
+      if (!appState.lastPipelineResult) return;
+      const darks = appState.lastPipelineResult.darkVessels;
+      const headers = [
+        "team", "det_id", "time_utc", "lon", "lat", "vv_db", "area_m2",
+        "est_length_m", "confidence", "nearest_ais_mmsi", "nearest_ais_name",
+        "nearest_ais_dist_m", "nearest_platform_dist_m", "data_source"
+      ];
+      const lines = [headers.join(",")];
+
+      darks.forEach(d => {
+        lines.push([
+          "Team Maya",
+          d.det_id,
+          d.time_utc,
+          d.lon,
+          d.lat,
+          d.vv_db,
+          d.area_m2,
+          d.estLengthM,
+          d.confidence,
+          d.nearestAis ? d.nearestAis.mmsi : "",
+          d.nearestAis ? `"${d.nearestAis.name}"` : "",
+          d.nearestAisDistM !== null ? d.nearestAisDistM : "",
+          d.nearestPlatformDistM,
+          appState.isSynthetic ? "SYNTHETIC_DEMO" : "USER_CSV"
+        ].join(","));
+      });
+
+      const suffix = appState.lastPipelineResult.sceneTimeIso === "ALL_SCENES"
+        ? "all_scenes"
+        : appState.lastPipelineResult.sceneTimeIso.slice(0, 10);
+
+      triggerDownload(
+        lines.join("\n"),
+        `team_maya_dark_vessels_${suffix}.csv`,
+        "text/csv;charset=utf-8;"
+      );
+    }
+
+    /**
+     * Triggers a browser file download of Team Maya's active Dark Vessels as RFC 7946 GeoJSON.
+     */
+    function exportDarkVesselsGeoJson() {
+      if (!appState.lastPipelineResult) return;
+      const darks = appState.lastPipelineResult.darkVessels;
+
+      const geojson = {
+        type: "FeatureCollection",
+        metadata: {
+          team: "Team Maya",
+          generator: "Team Maya SAR-AIS Dark Vessel Dashboard (Seas of Data Hackathon)",
+          scene_time_utc: appState.lastPipelineResult.sceneTimeIso,
+          match_buffer_m: appState.matchBufferMeters,
+          min_confidence: appState.minConfidence,
+          platform_exclusion_m: appState.platformBufferMeters,
+          synthetic_demo_data: appState.isSynthetic
+        },
+        features: darks.map(d => ({
+          type: "Feature",
+          geometry: {
+            type: "Point",
+            coordinates: [d.lon, d.lat]
+          },
+          properties: {
+            team: "Team Maya",
+            det_id: d.det_id,
+            time_utc: d.time_utc,
+            vv_db: d.vv_db,
+            area_m2: d.area_m2,
+            est_length_m: d.estLengthM,
+            confidence: d.confidence,
+            nearest_ais_mmsi: d.nearestAis ? d.nearestAis.mmsi : null,
+            nearest_ais_name: d.nearestAis ? d.nearestAis.name : null,
+            nearest_ais_dist_m: d.nearestAisDistM,
+            nearest_platform_name: d.nearestPlatform ? d.nearestPlatform.name : null,
+            nearest_platform_dist_m: d.nearestPlatformDistM,
+            status: "DARK_VESSEL"
+          }
+        }))
+      };
+
+      const suffix = appState.lastPipelineResult.sceneTimeIso === "ALL_SCENES"
+        ? "all_scenes"
+        : appState.lastPipelineResult.sceneTimeIso.slice(0, 10);
+
+      triggerDownload(
+        JSON.stringify(geojson, null, 2),
+        `team_maya_dark_vessels_${suffix}.geojson`,
+        "application/geo+json;charset=utf-8;"
+      );
+    }
+
+    function triggerDownload(content, filename, mimeType) {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    /**
+     * Wire up all interactive sliders, checkboxes, 3-way basemap buttons, tabs, and CSV importers.
+     */
+    function bindUiEvents() {
+      const sceneSelect = document.getElementById('sceneSelect');
+      const sceneSlider = document.getElementById('sceneSlider');
+
+      sceneSelect.addEventListener('change', (e) => {
+        appState.activeSceneIndex = parseInt(e.target.value, 10);
+        sceneSlider.value = appState.activeSceneIndex;
+        updateDashboard();
+      });
+
+      sceneSlider.addEventListener('input', (e) => {
+        appState.activeSceneIndex = parseInt(e.target.value, 10);
+        sceneSelect.value = appState.activeSceneIndex;
+        updateDashboard();
+      });
+
+      // Live Threshold Sliders
+      const sliderMatch = document.getElementById('sliderMatchBuffer');
+      const sliderConf = document.getElementById('sliderMinConf');
+      const sliderPlat = document.getElementById('sliderPlatformBuffer');
+
+      sliderMatch.addEventListener('input', (e) => {
+        appState.matchBufferMeters = parseInt(e.target.value, 10);
+        document.getElementById('valMatchBuffer').textContent = `${appState.matchBufferMeters} m`;
+        updateDashboard();
+      });
+
+      sliderConf.addEventListener('input', (e) => {
+        appState.minConfidence = parseFloat(e.target.value);
+        document.getElementById('valMinConf').textContent = `${Math.round(appState.minConfidence * 100)}%`;
+        updateDashboard();
+      });
+
+      sliderPlat.addEventListener('input', (e) => {
+        appState.platformBufferMeters = parseInt(e.target.value, 10);
+        document.getElementById('valPlatformBuffer').textContent = `${appState.platformBufferMeters} m`;
+        updateDashboard();
+      });
+
+      document.getElementById('btnResetSliders').addEventListener('click', () => {
+        appState.matchBufferMeters = 500;
+        appState.minConfidence = 0.55;
+        appState.platformBufferMeters = 1000;
+        sliderMatch.value = 500;
+        sliderConf.value = 0.55;
+        sliderPlat.value = 1000;
+        document.getElementById('valMatchBuffer').textContent = '500 m';
+        document.getElementById('valMinConf').textContent = '55%';
+        document.getElementById('valPlatformBuffer').textContent = '1000 m';
+        updateDashboard();
+      });
+
+      // Layer Toggles
+      ['chkLayerDark', 'chkLayerMatched', 'chkLayerAisTracks', 'chkLayerAllSar', 'chkLayerPlatforms', 'chkLayerAoi'].forEach(id => {
+        document.getElementById(id).addEventListener('change', () => {
+          if (appState.lastPipelineResult) renderMapLayers(appState.lastPipelineResult);
+        });
+      });
+
+      // 3-Way Keyless Basemap Switcher
+      document.getElementById('btnBaseVector').addEventListener('click', () => setBasemapMode('VECTOR_ONLY'));
+      document.getElementById('btnBaseOsmDark').addEventListener('click', () => setBasemapMode('OSM_DARK'));
+      document.getElementById('btnBaseEsriSat').addEventListener('click', () => setBasemapMode('ESRI_SAT'));
+
+      // Reset AOI Zoom
+      document.getElementById('btnResetBounds').addEventListener('click', () => {
+        map.fitBounds([
+          [AOI_BOUNDS.minLat, AOI_BOUNDS.minLon],
+          [AOI_BOUNDS.maxLat, AOI_BOUNDS.maxLon]
+        ]);
+      });
+
+      // Close Inspector Card
+      document.getElementById('btnCloseInspector').addEventListener('click', closeInspectorCard);
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeInspectorCard();
+      });
+
+      // Export Buttons
+      document.getElementById('btnExportCsv').addEventListener('click', exportDarkVesselsCsv);
+      document.getElementById('btnExportGeoJson').addEventListener('click', exportDarkVesselsGeoJson);
+
+      // View Tabs (Live Ops Dashboard vs Method & Limits)
+      const tabBtnMap = document.getElementById('tabBtnMap');
+      const tabBtnMethod = document.getElementById('tabBtnMethod');
+      const viewOpsMap = document.getElementById('viewOpsMap');
+      const viewMethodLimits = document.getElementById('viewMethodLimits');
+
+      tabBtnMap.addEventListener('click', () => {
+        viewOpsMap.classList.remove('hidden');
+        viewMethodLimits.classList.add('hidden');
+        tabBtnMap.className = 'px-3 py-1 rounded-md text-xs font-bold font-mono-tech uppercase bg-[#4f8cff] text-white transition';
+        tabBtnMethod.className = 'px-3 py-1 rounded-md text-xs font-bold font-mono-tech uppercase text-slate-300 hover:text-white transition';
+        setTimeout(() => map.invalidateSize(), 50);
+      });
+
+      tabBtnMethod.addEventListener('click', () => {
+        viewOpsMap.classList.add('hidden');
+        viewMethodLimits.classList.remove('hidden');
+        tabBtnMethod.className = 'px-3 py-1 rounded-md text-xs font-bold font-mono-tech uppercase bg-[#4f8cff] text-white transition';
+        tabBtnMap.className = 'px-3 py-1 rounded-md text-xs font-bold font-mono-tech uppercase text-slate-300 hover:text-white transition';
+      });
+
+      // CSV Modal Importer
+      const modal = document.getElementById('modalCsvImporter');
+      const statusMsg = document.getElementById('importStatusMsg');
+
+      document.getElementById('btnOpenImporter').addEventListener('click', () => {
+        statusMsg.classList.add('hidden');
+        modal.classList.remove('hidden');
+      });
+
+      document.getElementById('btnCloseModal').addEventListener('click', () => {
+        modal.classList.add('hidden');
+      });
+
+      document.getElementById('btnRestoreSynthetic').addEventListener('click', () => {
+        loadDatasetIntoApp(SYNTHETIC_SAR_CSV, SYNTHETIC_AIS_CSV, true);
+        modal.classList.add('hidden');
+      });
+
+      document.getElementById('btnApplyCsvImport').addEventListener('click', async () => {
+        const sarFile = document.getElementById('fileInputSar').files[0];
+        const aisFile = document.getElementById('fileInputAis').files[0];
+
+        if (!sarFile && !aisFile) {
+          statusMsg.textContent = "Please select at least a SAR CSV or AIS CSV file.";
+          statusMsg.classList.remove('hidden');
+          return;
+        }
+
+        try {
+          const sarText = sarFile ? await sarFile.text() : SYNTHETIC_SAR_CSV;
+          const aisText = aisFile ? await aisFile.text() : SYNTHETIC_AIS_CSV;
+          const res = loadDatasetIntoApp(sarText, aisText, false);
+          statusMsg.textContent = res.msg;
+          statusMsg.classList.remove('hidden');
+          if (res.ok) {
+            setTimeout(() => modal.classList.add('hidden'), 700);
+          }
+        } catch (err) {
+          statusMsg.textContent = `Error reading CSV: ${err.message}`;
+          statusMsg.classList.remove('hidden');
+        }
+      });
+    }
+
+    // Initialize Prototype on Window Load
+    window.addEventListener('DOMContentLoaded', () => {
+      initMap();
+      bindUiEvents();
+      loadDatasetIntoApp(SYNTHETIC_SAR_CSV, SYNTHETIC_AIS_CSV, true);
+    });
+  </script>
+<!-- =====================  VISUAL FX LAYER (cosmetic only, no data logic)  ===================== -->
+<style id="fx-style">
+:root{--fx-acc:#4f8cff;--fx-cyan:#00f2fe;--fx-violet:#6d4aff}
+/* ---------- boot splash ---------- */
+#fxBoot{position:fixed;inset:0;z-index:99999;background:radial-gradient(ellipse at 50% 40%,#1a1240 0%,#0a0d1a 70%);display:grid;place-items:center;
+  animation:fxBootOut .7s ease 2.3s forwards}
+#fxBoot.done{animation:fxBootOut .5s ease forwards}
+@keyframes fxBootOut{to{opacity:0;visibility:hidden;pointer-events:none}}
+#fxBoot .box{width:min(440px,86vw);font-family:'JetBrains Mono',monospace}
+#fxBoot .ring{width:84px;height:84px;margin:0 auto 22px;position:relative}
+#fxBoot .ring i{position:absolute;inset:0;border-radius:50%;border:1.5px solid rgba(79,140,255,.35)}
+#fxBoot .ring i:nth-child(2){inset:14px;border-color:rgba(0,242,254,.35)}
+#fxBoot .ring i:nth-child(3){inset:28px;border-color:rgba(255,255,255,.3)}
+#fxBoot .ring b{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,rgba(79,140,255,0) 0 70%,rgba(79,140,255,.85) 100%);
+  animation:fxSpin 1.4s linear infinite;-webkit-mask:radial-gradient(circle,transparent 0 6px,#000 7px);mask:radial-gradient(circle,transparent 0 6px,#000 7px)}
+@keyframes fxSpin{to{transform:rotate(360deg)}}
+#fxBoot h2{margin:0 0 16px;text-align:center;font:800 22px Inter,sans-serif;letter-spacing:.3em;color:#fff}
+#fxBoot h2 span{color:var(--fx-acc)}
+#fxBoot p{margin:5px 0;font-size:11.5px;color:#94a3b8;letter-spacing:.06em;opacity:0;transform:translateX(-8px);animation:fxLine .4s ease forwards}
+#fxBoot p em{font-style:normal;color:var(--fx-cyan)}
+#fxBoot p:nth-of-type(1){animation-delay:.25s}#fxBoot p:nth-of-type(2){animation-delay:.7s}#fxBoot p:nth-of-type(3){animation-delay:1.15s}#fxBoot p:nth-of-type(4){animation-delay:1.6s;color:#f1f5f9}
+@keyframes fxLine{to{opacity:1;transform:none}}
+#fxBoot .bar{height:2px;background:rgba(255,255,255,.1);margin-top:18px;overflow:hidden;border-radius:2px}
+#fxBoot .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--fx-violet),var(--fx-acc),var(--fx-cyan));animation:fxBar 2s cubic-bezier(.6,.1,.2,1) .1s forwards}
+@keyframes fxBar{to{width:100%}}
+#fxBoot .skip{margin-top:12px;text-align:center;font-size:10px;letter-spacing:.2em;color:#475569}
+
+/* ---------- entrance choreography ---------- */
+header{position:relative}
+header::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;background:linear-gradient(90deg,transparent,var(--fx-acc),var(--fx-cyan),transparent);
+  background-size:200% 100%;animation:fxShimmer 5s linear infinite;opacity:.85}
+@keyframes fxShimmer{to{background-position:-200% 0}}
+section.w-full>div{animation:fxUp .7s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(2.4s + var(--i,0)*70ms)}
+#viewOpsMap>aside{animation:fxUp .8s cubic-bezier(.2,.8,.2,1) both;animation-delay:2.7s}
+@keyframes fxUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+body>header>div:first-child svg{animation:fxSpin 12s linear infinite}
+
+/* ---------- spotlight glass cards ---------- */
+.fx-spot{position:relative;transition:border-color .25s,box-shadow .25s,transform .25s}
+.fx-spot::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .3s;
+  background:radial-gradient(240px circle at var(--mx,50%) var(--my,50%),rgba(79,140,255,.16),rgba(0,242,254,.05) 45%,transparent 70%)}
+.fx-spot:hover::after{opacity:1}
+.fx-spot:hover{border-color:rgba(79,140,255,.45)!important}
+button,select,label{transition:transform .18s,box-shadow .25s,background-color .2s,border-color .2s}
+button:not(:disabled):hover{transform:translateY(-1px);box-shadow:0 6px 20px -6px rgba(79,140,255,.55)}
+button:not(:disabled):active{transform:translateY(0) scale(.97)}
+.fx-ripple{position:absolute;border-radius:50%;pointer-events:none;background:rgba(255,255,255,.35);transform:scale(0);animation:fxRip .6s ease-out forwards}
+@keyframes fxRip{to{transform:scale(1);opacity:0}}
+input[type=range]{accent-color:var(--fx-acc)}
+input[type=range]::-webkit-slider-thumb{box-shadow:0 0 0 4px rgba(79,140,255,.25),0 0 14px rgba(79,140,255,.8);transition:box-shadow .2s}
+input[type=range]:active::-webkit-slider-thumb{box-shadow:0 0 0 7px rgba(79,140,255,.3),0 0 22px rgba(79,140,255,1)}
+::-webkit-scrollbar{width:7px;height:7px}
+::-webkit-scrollbar-thumb{background:linear-gradient(var(--fx-acc),var(--fx-violet));border-radius:8px}
+.leaflet-interactive{transition:filter .2s}
+.leaflet-interactive:hover{filter:drop-shadow(0 0 7px rgba(79,140,255,.95))}
+.leaflet-marker-icon{transition:transform .15s}
+
+/* ---------- map HUD: radar sweep, reticle corners, vignette ---------- */
+.fx-hud{position:absolute;inset:0;pointer-events:none;z-index:450;overflow:hidden}
+.fx-hud .sweep{position:absolute;left:50%;top:50%;width:170vmax;height:170vmax;margin:-85vmax 0 0 -85vmax;border-radius:50%;
+  background:conic-gradient(from 0deg,rgba(0,242,254,0) 0deg,rgba(0,242,254,0) 335deg,rgba(0,242,254,.05) 350deg,rgba(0,242,254,.22) 359deg,rgba(255,255,255,.35) 360deg);
+  animation:fxSpin 8s linear infinite;mix-blend-mode:screen;opacity:.4}
+.fx-hud .vig{position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 55%,rgba(5,7,20,.55) 100%)}
+.fx-hud .c{position:absolute;width:22px;height:22px;border:2px solid rgba(79,140,255,.8)}
+.fx-hud .tl{left:8px;top:8px;border-right:0;border-bottom:0}.fx-hud .tr{right:8px;top:8px;border-left:0;border-bottom:0}
+.fx-hud .bl{left:8px;bottom:8px;border-right:0;border-top:0}.fx-hud .br{right:8px;bottom:8px;border-left:0;border-top:0}
+
+/* ---------- scroll progress + reveal ---------- */
+#fxProg{position:fixed;left:0;top:0;height:3px;width:100%;transform-origin:0 50%;transform:scaleX(0);z-index:99990;pointer-events:none;
+  background:linear-gradient(90deg,var(--fx-violet),var(--fx-acc),var(--fx-cyan));box-shadow:0 0 12px var(--fx-acc);transition:transform .12s linear,opacity .4s;opacity:0}
+.fx-reveal{opacity:0;transform:translateY(26px) scale(.985);transition:opacity .8s cubic-bezier(.2,.8,.2,1),transform .8s cubic-bezier(.2,.8,.2,1)}
+.fx-reveal.in{opacity:1;transform:none}
+
+/* ---------- custom cursor ---------- */
+html.fx-cursor,html.fx-cursor *{cursor:none!important}
+#fxDot,#fxRing{position:fixed;left:0;top:0;pointer-events:none;z-index:100000;border-radius:50%;opacity:0;transition:opacity .25s}
+#fxDot{width:6px;height:6px;margin:-3px 0 0 -3px;background:#fff;box-shadow:0 0 10px var(--fx-acc),0 0 2px #fff}
+#fxRing{width:34px;height:34px;margin:-17px 0 0 -17px;border:1.5px solid rgba(79,140,255,.85);
+  transition:width .22s,height .22s,margin .22s,background-color .22s,border-color .22s,opacity .25s}
+#fxRing.hover{width:54px;height:54px;margin:-27px 0 0 -27px;background:rgba(79,140,255,.12);border-color:var(--fx-cyan)}
+#fxRing.down{width:22px;height:22px;margin:-11px 0 0 -11px;background:rgba(79,140,255,.35)}
+html.fx-cursor.fx-on #fxDot,html.fx-cursor.fx-on #fxRing{opacity:1}
+@media (prefers-reduced-motion:reduce){
+  #fxBoot{animation-duration:.01s;animation-delay:.2s}
+  .fx-hud .sweep,header::after,body>header>div:first-child svg{animation:none}
+  section.w-full>div,#viewOpsMap>aside{animation:none}.fx-reveal{opacity:1;transform:none;transition:none}
+}
+</style>
+
+<div id="fxBoot" aria-hidden="true">
+  <div class="box">
+    <div class="ring"><i></i><i></i><i></i><b></b></div>
+    <h2>SEAS <span>OF</span> DATA</h2>
+    <p>&gt; INITIALISING SAR-AIS FUSION ENGINE ........ <em>OK</em></p>
+    <p>&gt; LOADING SCENE DETECTIONS ................... <em>OK</em></p>
+    <p>&gt; ARMING DARK-VESSEL MATCHER ................. <em>OK</em></p>
+    <p>&gt; READY</p>
+    <div class="bar"><i></i></div>
+    <div class="skip">CLICK ANYWHERE TO SKIP</div>
+  </div>
+</div>
+<div id="fxProg"></div>
+<div id="fxDot"></div><div id="fxRing"></div>
+
+<script id="fx">
+(function(){
+  'use strict';
+  const $=id=>document.getElementById(id);
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const fine=matchMedia('(pointer: fine)').matches;
+
+  /* boot splash: dismiss on click/key, otherwise after 2.4 s (CSS also force-hides it as a fallback) */
+  const boot=$('fxBoot'), kill=()=>{ boot.classList.add('done'); setTimeout(()=>boot.remove(),700); };
+  boot.addEventListener('click',kill); addEventListener('keydown',kill,{once:true}); setTimeout(kill,reduce?300:2400);
+
+  /* KPI tiles get a stagger index */
+  document.querySelectorAll('section.w-full>div').forEach((el,i)=>el.style.setProperty('--i',i));
+
+  /* ---- custom cursor (fine pointers only) ---- */
+  if(fine && !reduce){
+    const root=document.documentElement, dot=$('fxDot'), ring=$('fxRing');
+    root.classList.add('fx-cursor');
+    let x=-100,y=-100,rx=-100,ry=-100;
+    const HOT='a,button,input,select,label,summary,[role=button],.leaflet-interactive,.leaflet-marker-icon,.leaflet-control a';
+    addEventListener('pointermove',e=>{
+      x=e.clientX;y=e.clientY; root.classList.add('fx-on');
+      dot.style.transform=`translate(${x}px,${y}px)`;
+      ring.classList.toggle('hover',!!(e.target.closest&&e.target.closest(HOT)));
+    },{passive:true});
+    addEventListener('pointerdown',()=>ring.classList.add('down'));
+    addEventListener('pointerup',()=>ring.classList.remove('down'));
+    document.addEventListener('mouseleave',()=>root.classList.remove('fx-on'));
+    (function loop(){ rx+=(x-rx)*.18; ry+=(y-ry)*.18; ring.style.transform=`translate(${rx}px,${ry}px)`; requestAnimationFrame(loop); })();
+  }
+
+  /* ---- spotlight glass cards + click ripple (delegated, works on dynamically added cards) ---- */
+  const SPOT='section.w-full>div, aside div[class*="rounded"], aside li, #viewMethodLimits div[class*="rounded"]';
+  addEventListener('pointermove',e=>{
+    const el=e.target.closest&&e.target.closest(SPOT); if(!el) return;
+    if(!el.classList.contains('fx-spot')){ if(getComputedStyle(el).position==='static') el.style.position='relative'; el.classList.add('fx-spot'); }
+    const r=el.getBoundingClientRect(); el.style.setProperty('--mx',(e.clientX-r.left)+'px'); el.style.setProperty('--my',(e.clientY-r.top)+'px');
+  },{passive:true});
+  document.addEventListener('click',e=>{
+    const b=e.target.closest&&e.target.closest('button'); if(!b||reduce) return;
+    if(getComputedStyle(b).position==='static') b.style.position='relative'; b.style.overflow=b.style.overflow||'hidden';
+    const r=b.getBoundingClientRect(), s=Math.max(r.width,r.height)*2, d=document.createElement('span');
+    d.className='fx-ripple'; d.style.cssText=`width:${s}px;height:${s}px;left:${e.clientX-r.left-s/2}px;top:${e.clientY-r.top-s/2}px`;
+    b.appendChild(d); setTimeout(()=>d.remove(),650);
+  });
+
+  /* ---- animated KPI counters (watches the app's own updates; never changes the final value) ---- */
+  ['kpiTotalSar','kpiPlatformCount','kpiMatchedCount','kpiDarkCount','kpiDarkPercent'].forEach(id=>{
+    const el=$(id); if(!el) return; let shown=0, raf=0;
+    const mo=new MutationObserver(()=>{
+      const txt=el.textContent.trim(), m=txt.match(/^(-?\d+(?:\.\d+)?)(\D*)$/); if(!m||reduce) { const n=parseFloat(txt); if(isFinite(n)) shown=n; return; }
+      const to=parseFloat(m[1]), dec=(m[1].split('.')[1]||'').length, suf=m[2], from=shown, t0=performance.now();
+      cancelAnimationFrame(raf);
+      const step=now=>{ const k=Math.min(1,(now-t0)/750), v=from+(to-from)*(1-Math.pow(1-k,3));
+        el.textContent=(k<1?v.toFixed(dec):m[1])+suf; mo.takeRecords();
+        if(k<1) raf=requestAnimationFrame(step); else shown=to; };
+      raf=requestAnimationFrame(step);
+    });
+    mo.observe(el,{childList:true,characterData:true,subtree:true});
+  });
+
+  /* ---- map HUD ---- */
+  const mapEl=$('map');
+  if(mapEl&&mapEl.parentElement){
+    const hud=document.createElement('div'); hud.className='fx-hud';
+    hud.innerHTML='<div class="vig"></div><div class="sweep"></div><i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>';
+    mapEl.parentElement.appendChild(hud);
+  }
+
+  /* ---- scroll progress (any scrolling panel) ---- */
+  const prog=$('fxProg'); let hideT;
+  document.addEventListener('scroll',e=>{
+    const t=e.target; if(!t||t===document||t.nodeType!==1) return;
+    const max=t.scrollHeight-t.clientHeight; if(max<=4) return;
+    prog.style.opacity=1; prog.style.transform=`scaleX(${Math.min(1,t.scrollTop/max)})`;
+    clearTimeout(hideT); hideT=setTimeout(()=>{prog.style.opacity=0;},900);
+  },true);
+
+  /* ---- reveal-on-scroll for the Method & Limits view ---- */
+  const view=$('viewMethodLimits');
+  if(view && 'IntersectionObserver' in window && !reduce){
+    const wrap=view.children.length===1?view.firstElementChild:view;
+    const io=new IntersectionObserver(es=>es.forEach(en=>{ if(en.isIntersecting){ en.target.classList.add('in'); io.unobserve(en.target); } }),{root:view,threshold:.08});
+    [...wrap.children].forEach((c,i)=>{ c.classList.add('fx-reveal'); c.style.transitionDelay=(i%4)*60+'ms'; io.observe(c); });
+  }
+})();
+</script>
+
+</body>
+</html>
