@@ -45,16 +45,16 @@ The Methods tab inside the app documents every algorithm, its parameters and its
 
 ## How to run
 
-**Quickest:** open `dist/seas_of_data_radar.html` in a browser (internet needed only for map tiles; the offline "Radar chart" works without it).
+**Quickest:** open `dist/seas_of_data_intel.html` in a browser (internet needed only for map tiles; the offline "Radar chart" works without it).
 
 ```bash
 git clone <this-repo-url> && cd seas-of-data
-npm run serve            # http://localhost:8000/seas_of_data_radar.html
+npm run serve            # http://localhost:8000/seas_of_data_intel.html
 npm test                 # algorithm tests
 npm run build            # rebuild dist/ from src/ (needs Node, Python 3, npm)
 ```
 
-`dist/seas_of_data_intel.html` is the earlier, simpler-look build kept for reference.
+`dist/seas_of_data_radar.html` is the earlier, simpler-look build kept for reference.
 
 ### Try it
 1. **Live Ops**: pick SAR pass 2 to see Hungarian beat greedy matching; click an alert for its explanation.
